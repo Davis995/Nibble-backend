@@ -1,0 +1,13 @@
+<html>
+  <body>
+    <p>Hello,</p>
+    <p>You have been invited to join <strong>{{ school.name }}</strong> as a <strong>{{ role_display }}</strong>.</p>
+    <p>Invited by: {{ inviter.get_full_name|default:inviter.email }}</p>
+    <p>
+      Click <a href="{{ invite_link }}">this link</a> to accept the invitation and set your password.
+    </p>
+    <p>If you didn't expect this email, you can ignore it.</p>
+    <hr>
+    <p>Thanks,<br>{{ school.name }} Team</p>
+  </body>
+</html>

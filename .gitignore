@@ -1,0 +1,77 @@
+# Python
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv/
+env.bak/
+venv.bak/
+
+# Django
+*.log
+*.pot
+*.py[cod]
+*.mo
+*.sqlite3
+db.sqlite3
+media/
+staticfiles/
+local_settings.py
+settings_local.py
+*.pyc
+
+# IDEs and editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Mac
+.DS_Store
+
+# Distribution
+*.tar.gz
+*.zip
+
+# env files
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+
+# Coverage
+htmlcov/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# Pytest
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+
+# celerybeat
+celerybeat-schedule
+
+# django migrations (if you prefer not tracking them)
+# backend/**/migrations/
+
+# local settings
+local_settings.py

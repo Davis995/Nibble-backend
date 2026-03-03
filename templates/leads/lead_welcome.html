@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Welcome to Our Platform</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 20px; }
+        .header { background-color: #007bff; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; }
+        .footer { background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #6c757d; }
+        .button { display: inline-block; background-color: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Welcome to Our E-Learning Platform</h1>
+        </div>
+        <div class="content">
+            <p>Dear {{ lead.firstname }} {{ lead.secondname }},</p>
+            
+            <p>Thank you for your interest in our e-learning platform! We're excited to have {{ lead.institution_name }} join our community of educational institutions.</p>
+            
+            <p>Our team will review your information and get back to you shortly with next steps. In the meantime, feel free to explore our platform or contact us if you have any questions.</p>
+            
+            <p><strong>Your Information:</strong></p>
+            <ul>
+                <li>Institution: {{ lead.institution_name }}</li>
+                <li>Type: {{ lead.institution_type }}</li>
+                <li>Location: {{ lead.city }}, {{ lead.country }}</li>
+                <li>Email: {{ lead.workemail }}</li>
+                <li>Phone: {{ lead.phone }}</li>
+            </ul>
+            
+            <p>We'll be in touch soon!</p>
+            
+            <p>Best regards,<br>
+            The E-Learning Platform Team</p>
+        </div>
+        <div class="footer">
+            <p>This is an automated message. Please do not reply to this email.</p>
+            <p>&copy; 2024 E-Learning Platform. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

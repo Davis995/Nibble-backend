@@ -1,0 +1,73 @@
+# Django and DRF
+Django>=4.2.0
+djangorestframework>=3.14.0
+
+# OpenAI
+openai>=1.0.0
+
+# Database
+psycopg2-binary>=2.9.0  # For PostgreSQL (or use sqlite3 for development)
+
+# Environment variables
+python-decouple>=3.8
+python-dotenv>=1.0.0
+
+# CORS headers (if frontend is separate)
+django-cors-headers>=4.3.0
+
+# Timezone support
+pytz>=2023.3
+
+# For better admin
+django-admin-rangefilter>=0.11.0
+
+# Testing
+pytest>=7.4.0
+pytest-django>=4.5.0
+# Django and DRF
+Django>=4.2.0
+djangorestframework>=3.14.0
+
+# JWT Authentication
+djangorestframework-simplejwt>=5.3.0
+
+# OpenAI
+openai>=1.0.0
+
+# Database
+psycopg2-binary>=2.9.0  # For PostgreSQL (or use sqlite3 for development)
+
+# Environment variables
+python-decouple>=3.8
+python-dotenv>=1.0.0
+
+# CORS headers
+django-cors-headers>=4.3.0
+
+# Timezone support
+pytz>=2023.3
+
+# Image handling
+Pillow>=10.0.0
+
+# For better admin
+django-admin-rangefilter>=0.11.0
+
+# Password strength validation
+django-password-validators>=1.7.1
+
+# Testing
+pytest>=7.4.0
+pytest-django>=4.5.0
+factory-boy>=3.3.0
+
+# Code quality
+flake8>=6.1.0
+black>=23.12.0
+
+# Security
+django-ratelimit>=4.1.0
+
+# Excel processing
+pandas>=2.0.0
+openpyxl>=3.1.0

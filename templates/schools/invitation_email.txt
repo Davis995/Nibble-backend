@@ -1,0 +1,16 @@
+Hello {{ inviter.get_full_name|default:inviter.email }},
+
+You have invited {{ role_display }} ({{ invite_link }}) to join {{ school.name }}.
+
+Hello,
+
+You have been invited to join {{ school.name }} as a {{ role_display }}.
+
+Please click the link below to accept the invitation and set your password:
+
+{{ invite_link }}
+
+If you didn't expect this email, you can ignore it.
+
+Thanks,
+The {{ school.name }} team

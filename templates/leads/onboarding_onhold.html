@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Onboarding Temporarily On Hold</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 20px; }
+        .header { background-color: #ffc107; color: #212529; padding: 20px; text-align: center; }
+        .content { padding: 20px; }
+        .footer { background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #6c757d; }
+        .button { display: inline-block; background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }
+        .status-notice { background-color: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Onboarding Temporarily On Hold</h1>
+        </div>
+        <div class="content">
+            <div class="status-notice">
+                <h3>⚠️ Important Update</h3>
+                <p>The onboarding process for {{ onboarding.school.name }} has been temporarily placed on hold.</p>
+            </div>
+            
+            <p>Dear {{ onboarding.school.admin_user.first_name }} {{ onboarding.school.admin_user.last_name }},</p>
+            
+            <p>We wanted to inform you that the onboarding process for {{ onboarding.school.name }} has been temporarily paused. This decision was made to ensure the highest quality implementation for your institution.</p>
+            
+            <p><strong>Current Status:</strong></p>
+            <ul>
+                <li><strong>Onboarding Status:</strong> On Hold</li>
+                <li><strong>Progress Completed:</strong> {{ onboarding.percentage }}%</li>
+                <li><strong>Original Go-Live Date:</strong> {{ onboarding.expected_go_live_date|date:"F j, Y" }}</li>
+            </ul>
+            
+            <p><strong>Possible reasons for the hold:</strong></p>
+            <ul>
+                <li>Additional requirements or customizations needed</li>
+                <li>Technical considerations requiring further review</li>
+                <li>Coordination with your internal teams</li>
+                <li>Quality assurance and testing requirements</li>
+            </ul>
+            
+            {% if onboarding.notes %}
+            <p><strong>Additional Notes:</strong> {{ onboarding.notes }}</p>
+            {% endif %}
+            
+            <p><strong>What happens next:</strong></p>
+            <ol>
+                <li>Our team will review the current progress</li>
+                <li>We'll identify and address any outstanding issues</li>
+                <li>A revised timeline will be communicated</li>
+                <li>Onboarding will resume once all requirements are met</li>
+            </ol>
+            
+            <p>Your onboarding manager, {{ onboarding.onboarding_manager.first_name }} {{ onboarding.onboarding_manager.last_name }}, will be in touch shortly with more details and next steps.</p>
+            
+            <p>We apologize for any inconvenience this may cause and appreciate your understanding. Our goal is to ensure a successful and smooth transition to our platform.</p>
+            
+            <p>If you have any immediate questions or concerns, please don't hesitate to contact us.</p>
+            
+            <p>Best regards,<br>
+            The Onboarding Team</p>
+        </div>
+        <div class="footer">
+            <p>This is an automated message. Please do not reply to this email.</p>
+            <p>&copy; 2024 E-Learning Platform. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

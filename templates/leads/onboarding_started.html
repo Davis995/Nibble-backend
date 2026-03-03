@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Onboarding Process Started</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 20px; }
+        .header { background-color: #17a2b8; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; }
+        .footer { background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #6c757d; }
+        .button { display: inline-block; background-color: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }
+        .timeline { background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Onboarding Process Started</h1>
+        </div>
+        <div class="content">
+            <p>Dear {{ admin_user.first_name }} {{ admin_user.last_name }},</p>
+            
+            <p>Great news! The onboarding process for {{ onboarding.school.name }} has officially begun. We're committed to ensuring a smooth transition to our e-learning platform.</p>
+            
+            <div class="timeline">
+                <h3>Onboarding Timeline:</h3>
+                <p><strong>Start Date:</strong> {{ onboarding.startdate|date:"F j, Y" }}</p>
+                <p><strong>Expected Go-Live Date:</strong> {{ onboarding.expected_go_live_date|date:"F j, Y" }}</p>
+                <p><strong>Onboarding Type:</strong> {{ onboarding.onboarding_type|title }}</p>
+                <p><strong>Current Progress:</strong> {{ onboarding.percentage }}%</p>
+            </div>
+            
+            <p><strong>What to expect during onboarding:</strong></p>
+            <ul>
+                <li>Initial platform setup and configuration</li>
+                <li>Staff training sessions</li>
+                <li>Data migration assistance</li>
+                <li>Custom feature implementation</li>
+                <li>Technical support and troubleshooting</li>
+                <li>Go-live preparation and support</li>
+            </ul>
+            
+            <p><strong>Your Onboarding Manager:</strong></p>
+            <p>{{ onboarding.onboarding_manager.first_name }} {{ onboarding.onboarding_manager.last_name }}<br>
+            Email: {{ onboarding.onboarding_manager.email }}</p>
+            
+            {% if onboarding.notes %}
+            <p><strong>Additional Notes:</strong> {{ onboarding.notes }}</p>
+            {% endif %}
+            
+            <p>We'll be in regular contact to keep you updated on progress and address any questions or concerns you may have.</p>
+            
+            <p>Let's make this transition successful together!</p>
+            
+            <p>Best regards,<br>
+            The Onboarding Team</p>
+        </div>
+        <div class="footer">
+            <p>This is an automated message. Please do not reply to this email.</p>
+            <p>&copy; 2024 E-Learning Platform. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
