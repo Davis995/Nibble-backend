@@ -18,7 +18,8 @@ def run():
         defaults={
             "total_credits": 10000,
             "max_users": 300,
-            "monthly_price": 6000.00
+            "monthly_price": 6000.00,
+            "allowed_modals": ["gpt-4", "gpt-3.5", "deepseek-chat"]
         }
     )
 

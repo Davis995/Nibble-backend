@@ -2,6 +2,46 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
+
+# Modal token/credit weights mapping
+# Each modal: input_token_weight, output_token_weight, min_charge, credit_multiplier, enterprise_discount
+MODAL_CREDIT_RULES = {
+    'deepseek-chat': {
+        'input_token_weight': 1,
+        'output_token_weight': 2,
+        'min_charge': 50,
+        'credit_multiplier': 1,  # 1 credit per input token, 2 per output
+        'enterprise_discount': 0.2,  # 20% discount
+    },
+    'gpt-4o-mini': {
+        'input_token_weight': 1,
+        'output_token_weight': 1.5,
+        'min_charge': 50,
+        'credit_multiplier': 1,
+        'enterprise_discount': 0.2,
+    },
+    'gpt-4': {
+        'input_token_weight': 6,
+        'output_token_weight': 6,
+        'min_charge': 50,
+        'credit_multiplier': 1,
+        'enterprise_discount': 0.2,
+    },
+    'gpt-4.1': {
+        'input_token_weight': 2,
+        'output_token_weight': 4,
+        'min_charge': 50,
+        'credit_multiplier': 1,
+        'enterprise_discount': 0.2,
+    },
+    'gpt-3.5': {
+        'input_token_weight': 1,
+        'output_token_weight': 1,
+        'min_charge': 50,
+        'credit_multiplier': 1,
+        'enterprise_discount': 0.2,
+    },
+}
 from django.db.models import Sum, Count, Avg, F, Max
 from django.db.models.functions import TruncDate
 from django.utils import timezone
@@ -13,6 +53,7 @@ import os
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from authentication.permissions import *
+from authentication.models import Subscription
 from .models import (
     AILog, AITool, UserAIUsage, ToolCategory, ToolInput, ToolFavorite,
     ChatSession, ChatMessage
@@ -171,21 +212,7 @@ class ToolFavoriteToggleView(APIView):
 
 
 # ================== MAIN AI REQUEST VIEW ==================
-
 class AIRequestView(APIView):
-    """
-    Main view to handle all AI requests with dynamic tool configuration
-    and automatic AI provider switching (OpenAI/DeepSeek)
-    
-    POST: Send AI request and get response
-    Accepts:
-      - tool_id: (int) ID of the AITool to use (NEW - overrides 'tool' field)
-      - tool_slug: (str) slug of the AITool to use (NEW - alternative to ID)
-      - tool: (str) Tool name string (LEGACY - for backward compatibility)
-      - inputs: (dict) Dynamic input fields based on tool configuration
-      - provider: (str) Preferred provider: 'openai', 'deepseek' (optional, auto-switches on failure)
-      - Additional fields for backward compatibility (topic, class_level, etc.)
-    """
     permission_classes = [IsAuthenticated]
     
     def __init__(self, **kwargs):
@@ -195,7 +222,6 @@ class AIRequestView(APIView):
     
     def post(self, request):
         """Handle AI request with dynamic tool configuration and provider switching"""
-        
         # Validate request data
         serializer = AIRequestSerializer(data=request.data)
         if not serializer.is_valid():
@@ -204,167 +230,221 @@ class AIRequestView(APIView):
                 'message': 'Invalid request data',
                 'errors': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         validated_data = serializer.validated_data
-        
+
         try:
             # Ensure user is authenticated
             if not (hasattr(request, 'user') and request.user and request.user.is_authenticated):
                 return Response({'success': False, 'message': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
 
             user = request.user
-            
+
             # Step 1: Determine tool and build prompt
             tool_id = request.data.get('tool_id')
             tool_slug = validated_data.get('tool_slug')
-            tool_name = validated_data.get('tool')
             provider = request.data.get('provider')  # Preferred provider (optional)
-            
-            if tool_id or tool_slug:
-                # NEW: Dynamic tool configuration based on identifier
-                try:
-                    if tool_id:
-                        tool_obj = AITool.objects.get(id=tool_id, is_active=True)
-                    else:
-                        tool_obj = AITool.objects.get(slug=tool_slug, is_active=True)
-                except AITool.DoesNotExist:
-                    missing = tool_id if tool_id else tool_slug
-                    return Response({
-                        'success': False,
-                        'message': f'Tool with identifier {missing} not found'
-                    }, status=status.HTTP_404_NOT_FOUND)
-                
-                # Build prompt dynamically from tool configuration
-                user_inputs = request.data.get('inputs', {})
-                system_prompt, user_prompt, full_prompt = self.prompt_builder.build_from_tool_config(tool_obj, user_inputs)
-                prompt = full_prompt
-                tool_for_logging = tool_obj.name
-            else:
-                # LEGACY: Use tool name string
-                if not tool_name:
-                    return Response({
-                        'success': False,
-                        'message': 'Either tool_id or tool must be provided'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-                
-                # Build prompt from legacy fields (topic, class_level, difficulty, content, etc.)
-                prompt_parts = []
-                if validated_data.get('topic'):
-                    prompt_parts.append(f"Topic: {validated_data['topic']}")
-                if validated_data.get('class_level'):
-                    prompt_parts.append(f"Class Level: {validated_data['class_level']}")
-                if validated_data.get('difficulty'):
-                    prompt_parts.append(f"Difficulty: {validated_data['difficulty']}")
-                if validated_data.get('content'):
-                    prompt_parts.append(f"Content: {validated_data['content']}")
-                if validated_data.get('num_questions'):
-                    prompt_parts.append(f"Number of Questions: {validated_data['num_questions']}")
-                if validated_data.get('question_type'):
-                    prompt_parts.append(f"Question Type: {validated_data['question_type']}")
-                
-                prompt = "\n".join(prompt_parts) if prompt_parts else "Please process the request"
-                tool_for_logging = tool_name
-            
-            # Estimate token usage
-            estimated_tokens = estimate_tokens(prompt)
-            
-            # Pre-check subscription / per-request limits
+
+            if not (tool_id or tool_slug):
+                return Response({
+                    'success': False,
+                    'message': 'Either tool_id or tool_slug must be provided.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Dynamic tool configuration based on identifier
             try:
-                check_long_request_limit(user, estimated_tokens)
+                if tool_id:
+                    tool_obj = AITool.objects.get(id=tool_id, is_active=True)
+                else:
+                    tool_obj = AITool.objects.get(slug=tool_slug, is_active=True)
+            except AITool.DoesNotExist:
+                missing = tool_id if tool_id else tool_slug
+                return Response({
+                    'success': False,
+                    'message': f'Tool with identifier {missing} not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            # Build prompt dynamically from tool configuration
+            user_inputs = request.data.get('inputs', {})
+            try:
+                system_prompt, user_prompt, full_prompt = self.prompt_builder.build_from_tool_config(tool_obj, user_inputs)
+            except Exception as e:
+                return Response({
+                    'success': False,
+                    'message': f'Error building prompt: {str(e)}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            prompt = full_prompt
+            tool_for_logging = tool_obj.name
+
+            # Modal selection logic
+            plan = None
+            subscription = None
+            if hasattr(request.user, 'subscription_set'):
+                subscription = request.user.subscription_set.filter(status='active').order_by('-created_at').first()
+            elif hasattr(request.user, 'subscription'):
+                subscription = request.user.subscription
+            if subscription:
+                plan = subscription.plan
+            elif hasattr(request.user, 'subscription_plan') and request.user.subscription_plan:
+                plan = request.user.subscription_plan
+
+            allowed_modals = plan.allowed_modals if plan and hasattr(plan, 'allowed_modals') else []
+            preferred_modal = tool_obj.preferred_modal or None
+            selected_modal = None
+            if preferred_modal and preferred_modal in allowed_modals:
+                selected_modal = preferred_modal
+            elif allowed_modals:
+                selected_modal = allowed_modals[0]
+            else:
+                selected_modal = preferred_modal or 'gpt-3.5'  # fallback default
+
+
+                # (Removed: credits calculation block is now after token estimation)
+
+            # Map modal to provider
+            modal_provider_map = {
+                'gpt-4': 'openai',
+                'gpt-4o-mini': 'openai',
+                'gpt-3.5': 'openai',
+                'deepseek-chat': 'deepseek',
+            }
+            provider = modal_provider_map.get(selected_modal, 'openai')
+            model = selected_modal
+
+
+
+            # Pre-check subscription / per-request limits (use estimate for pre-check only)
+            try:
+                token_info = estimate_tokens(prompt)
+                # Handle both dict and int return types for estimate_tokens
+                if isinstance(token_info, int):
+                    est_input_tokens = token_info
+                    est_output_tokens = 0
+                elif isinstance(token_info, dict):
+                    est_input_tokens = token_info.get('input_tokens', 0)
+                    est_output_tokens = token_info.get('output_tokens', 0)
+                else:
+                    est_input_tokens = 0
+                    est_output_tokens = 0
+                check_long_request_limit(user, est_input_tokens + est_output_tokens)
             except Exception as e:
                 return Response({'success': False, 'message': str(e)}, status=status.HTTP_403_FORBIDDEN)
-            
+
+
             # Step 2: Call AI provider (with automatic switching)
             start_time = time.time()
-            if tool_id and 'system_prompt' in locals():
-                # Use separated prompts for tool_id requests
+            try:
                 result = self.provider_router.call_ai(
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
-                    provider=provider,
+                    provider=provider,  # This is set by modal selection logic above
+                    model=model,        # Always pass the selected modal/model
                     temperature=getattr(settings, 'OPENAI_TEMPERATURE', float(os.getenv('OPENAI_TEMPERATURE', 0.5))),
                     max_tokens=getattr(settings, 'OPENAI_MAX_TOKENS', int(os.getenv('OPENAI_MAX_TOKENS', 400)))
                 )
-            else:
-                # Use combined prompt for legacy tool name requests
-                result = self.provider_router.call_ai(
-                    prompt=prompt,
-                    provider=provider,
-                    temperature=getattr(settings, 'OPENAI_TEMPERATURE', float(os.getenv('OPENAI_TEMPERATURE', 0.5))),
-                    max_tokens=getattr(settings, 'OPENAI_MAX_TOKENS', int(os.getenv('OPENAI_MAX_TOKENS', 400)))
-                )
+            except Exception as e:
+                return Response({
+                    'success': False,
+                    'message': f'Error calling AI provider: {str(e)}'
+                }, status=status.HTTP_502_BAD_GATEWAY)
             response_time = time.time() - start_time
-            
+
             # Extract response data
-            ai_response = result['response']
-            prompt_tokens = result['usage']['prompt_tokens']
-            completion_tokens = result['usage']['completion_tokens']
-            total_tokens = result['usage']['total_tokens']
-            ai_provider = result['provider']
-            
-            # Deduct credits from subscription
             try:
-                ensure_credits_and_deduct(user, total_tokens)
+                ai_response = result['response']
+                prompt_tokens = result['usage']['prompt_tokens']
+                completion_tokens = result['usage']['completion_tokens']
+                total_tokens = result['usage']['total_tokens']
+                ai_provider = result['provider']
+            except Exception as e:
+                return Response({
+                    'success': False,
+                    'message': f'Error parsing AI provider response: {str(e)}'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            # Calculate credits for this modal using actual token usage
+            modal_rules = MODAL_CREDIT_RULES.get(model, MODAL_CREDIT_RULES['gpt-3.5'])
+            input_weight = modal_rules['input_token_weight']
+            output_weight = modal_rules['output_token_weight']
+            min_charge = modal_rules['min_charge']
+            credit_multiplier = modal_rules['credit_multiplier']
+            enterprise_discount = modal_rules['enterprise_discount']
+
+            credits_used = (
+                (prompt_tokens * input_weight + completion_tokens * output_weight) * credit_multiplier
+            )
+            if credits_used < min_charge:
+                credits_used = min_charge
+
+            # Apply enterprise discount if user is enterprise
+            if hasattr(user, 'user_type') and user.user_type == 'enterprise':
+                credits_used = int(credits_used * (1 - enterprise_discount))
+
+            # Deduct calculated credits from subscription
+            try:
+                ensure_credits_and_deduct(user, credits_used)
             except Exception as e:
                 return Response({'success': False, 'message': f'Billing failed: {str(e)}'}, status=status.HTTP_402_PAYMENT_REQUIRED)
-            
+
             # Step 3: Log the request
-            log = self._create_log(
-                user=user,
-                tool=tool_for_logging,
-                topic=validated_data.get('topic', ''),
-                class_level=validated_data.get('class_level', ''),
-                difficulty=validated_data.get('difficulty', ''),
-                prompt=prompt,
-                response=ai_response,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                response_time=response_time,
-                provider=ai_provider
-            )
-            
+            try:
+                log = self._create_log(
+                    user=user,
+                    tool=tool_for_logging,
+                    topic=validated_data.get('topic', ''),
+                    class_level=validated_data.get('class_level', ''),
+                    difficulty=validated_data.get('difficulty', ''),
+                    prompt=prompt,
+                    response=ai_response,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    response_time=response_time,
+                    provider=ai_provider
+                )
+            except Exception as e:
+                return Response({
+                    'success': False,
+                    'message': f'Error logging AI request: {str(e)}'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
             # Step 4: Update user usage
-            self._update_user_usage(user, log)
-            
+            try:
+                self._update_user_usage(user, log)
+            except Exception as e:
+                return Response({
+                    'success': False,
+                    'message': f'Error updating user usage: {str(e)}'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
             # Step 5: Return response
+
             response_data = {
                 'success': True,
                 'data': ai_response,
                 'tokens_used': total_tokens,
+                'credits_used': credits_used,
                 'provider': ai_provider,
                 'model': result.get('model'),
                 'message': 'AI request completed successfully'
             }
-            
+
             if log:
                 response_data.update({
                     'log_id': log.id,
                     'cost': float(log.cost),
                 })
-            
+
             return Response(response_data, status=status.HTTP_200_OK)
-        
+
         except Exception as e:
             return Response({
                 'success': False,
                 'message': f'Error processing AI request: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-    def _call_openai(self, prompt):
-        """Call OpenAI API (LEGACY - use provider_router instead)"""
-        completion = self.provider_router.openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a helpful educational assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=getattr(settings, 'OPENAI_TEMPERATURE', float(os.getenv('OPENAI_TEMPERATURE', 0.5))),
-            max_tokens=getattr(settings, 'OPENAI_MAX_TOKENS', int(os.getenv('OPENAI_MAX_TOKENS', 400)))
-        )
-        return completion
+
     
     def _create_log(self, user, tool, topic, class_level, difficulty, 
-                    prompt, response, prompt_tokens, completion_tokens, response_time, provider='openai'):
+                    prompt, response, prompt_tokens, completion_tokens, response_time, provider):
         """Create AI log entry with provider information"""
         log = AILog.objects.create(
             user=user,
@@ -864,3 +944,78 @@ class ChatReplyAPIView(APIView):
         session.refresh_from_db()
         serializer = ChatSessionSerializer(session, context={'request': request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+# ================== USAGE ENDPOINTS ==================
+
+class UsageCreditsView(APIView):
+    """
+    Get credit usage information for authenticated user
+    GET /api/v1/tools/usage/credits/
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        user = request.user
+        
+        try:
+            subscription = self._get_user_subscription(user)
+            
+            if not subscription:
+                return Response({
+                    "current_usage": 0,
+                    "monthly_limit": 0,
+                    "usage_percentage": 0,
+                    "reset_days": 0,
+                    "reset_date": None,
+                    "plan_name": "No Plan"
+                })
+            
+            # Calculate usage metrics
+            current_usage = subscription.start_credits - subscription.remaining_credits
+            monthly_limit = subscription.start_credits
+            usage_percentage = round((current_usage / monthly_limit * 100), 2) if monthly_limit > 0 else 0.0
+            
+            # Calculate days until reset
+            billing_end_date = subscription.billing_end_date
+            today = timezone.now().date()
+            reset_days = max((billing_end_date - today).days, 0)
+            
+            # Format reset date
+            reset_date = billing_end_date.isoformat() + "T00:00:00Z" if billing_end_date else None
+            
+            return Response({
+                "current_usage": current_usage,
+                "monthly_limit": monthly_limit,
+                "usage_percentage": usage_percentage,
+                "reset_days": reset_days,
+                "reset_date": reset_date,
+                "plan_name": subscription.plan.name
+            })
+        
+        except Exception as e:
+            return Response({
+                "current_usage": 0,
+                "monthly_limit": 0,
+                "usage_percentage": 0,
+                "reset_days": 0,
+                "reset_date": None,
+                "plan_name": "Error"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def _get_user_subscription(self, user):
+        """Get active subscription for user (individual or enterprise)"""
+        
+        # If enterprise user, get organisation's subscription
+        if user.user_type == 'enterprise' and user.organisation:
+            subscription = user.organisation.subscriptions.filter(
+                status='active'
+            ).order_by('-created_at').first()
+        else:
+            # Individual user subscription
+            subscription = Subscription.objects.filter(
+                user=user,
+                status='active'
+            ).order_by('-created_at').first()
+        
+        return subscription

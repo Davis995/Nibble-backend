@@ -45,6 +45,7 @@ class AITool(models.Model):
     is_premium = models.BooleanField(default=False)
     is_recommended = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
+    preferred_modal = models.CharField(max_length=100, blank=True, null=True, help_text="Preferred AI modal for this tool, e.g. 'gpt-4', 'deepseek-chat'")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     

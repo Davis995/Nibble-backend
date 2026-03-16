@@ -106,7 +106,7 @@ class AIProviderRouter:
         
         raise ValueError("No AI providers configured. Set OPENAI_API_KEY or DEEPSEEK_API_KEY in settings.")
     
-    def call_ai(self, prompt: str = None, system_prompt: str = None, user_prompt: str = None, provider: Optional[str] = None, **kwargs) -> Dict:
+    def call_ai(self, prompt: str = None, system_prompt: str = None, user_prompt: str = None, provider: Optional[str] = None, model: Optional[str] = None, **kwargs) -> Dict:
         """
         Call AI with automatic provider selection and fallback.
         
@@ -115,7 +115,8 @@ class AIProviderRouter:
             system_prompt: System/instruction prompt (separate)
             user_prompt: User-provided prompt (separate)
             provider: Preferred provider (will auto-fallback if unavailable)
-            **kwargs: Additional parameters (temperature, max_tokens, model, etc.)
+            model: The AI model/modal to use (e.g., 'gpt-4', 'deepseek-chat')
+            **kwargs: Additional parameters (temperature, max_tokens, etc.)
         
         Returns:
             Dictionary with 'provider', 'response', 'usage', and other completion details
@@ -129,27 +130,36 @@ class AIProviderRouter:
         selected_provider = self.get_provider(provider)
         
         try:
+            call_kwargs = dict(kwargs)
+            if model:
+                call_kwargs['model'] = model
             if selected_provider == self.PROVIDER_DEEPSEEK:
-                return self._call_deepseek(system_prompt, user_prompt, **kwargs)
+                return self._call_deepseek(system_prompt, user_prompt, **call_kwargs)
             else:
-                return self._call_openai(system_prompt, user_prompt, **kwargs)
+                return self._call_openai(system_prompt, user_prompt, **call_kwargs)
         except Exception as e:
             # Auto-switch to fallback provider on error
             if selected_provider == self.PROVIDER_OPENAI and self.deepseek_client:
                 print(f"OpenAI call failed: {e}. Switching to DeepSeek...")
-                return self._call_deepseek(system_prompt, user_prompt, **kwargs)
+                call_kwargs = dict(kwargs)
+                if model:
+                    call_kwargs['model'] = model
+                return self._call_deepseek(system_prompt, user_prompt, **call_kwargs)
             elif selected_provider == self.PROVIDER_DEEPSEEK and self.openai_client:
                 print(f"DeepSeek call failed: {e}. Switching to OpenAI...")
-                return self._call_openai(system_prompt, user_prompt, **kwargs)
+                call_kwargs = dict(kwargs)
+                if model:
+                    call_kwargs['model'] = model
+                return self._call_openai(system_prompt, user_prompt, **call_kwargs)
             raise
     
     def _call_openai(self, system_prompt: str, user_prompt: str, **kwargs) -> Dict:
-        """Call OpenAI API with separate system and user prompts."""
+        """Call OpenAI API with separate system and user prompts. Defaults to 'gpt-4o-mini' if model not provided."""
         if not self.openai_client:
             raise ValueError("OpenAI client not initialized")
-        
+        model = kwargs.get('model', 'gpt-4o-mini')
         completion = self.openai_client.chat.completions.create(
-            model=kwargs.get('model', 'gpt-4o-mini'),
+            model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}

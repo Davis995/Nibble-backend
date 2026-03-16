@@ -27,6 +27,7 @@ class Plan(models.Model):
     description = models.TextField(blank=True, help_text="Plan description for marketing")
     use_type = models.CharField(max_length=20, choices=USE_TYPE_CHOICES)
     theme = models.CharField(max_length=20, choices=THEME_CHOICES, default='cream')
+    allowed_modals = models.JSONField(default=list, blank=True, help_text="List of allowed AI modals for this plan, e.g. ['gpt-4', 'gpt-3.5', 'deepseek-chat']")
     
     # Pricing
     total_credits = models.IntegerField(default=0, help_text="Total credits for this plan")

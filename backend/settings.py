@@ -55,7 +55,16 @@ MIDDLEWARE = [
     
 
 ]
-
+# allow a specific frontend domain
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # React
+    "http://127.0.0.1:3000",
+    "http://localhost:3000"
+    
+]
+CORS_ALLOW_CREDENTIALS = True
+# OR allow all domains (not recommended for production)
+# CORS_ALLOW_ALL_ORIGINS = True
 ROOT_URLCONF = 'backend.urls'
 
 TEMPLATES = [
@@ -158,12 +167,12 @@ REST_FRAMEWORK = {
 }
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = config(
-    'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:3000,http://localhost:8080'
-).split(',')
+# CORS_ALLOWED_ORIGINS = config(
+#     'CORS_ALLOWED_ORIGINS',
+#     default='http://localhost:3000,http://localhost:8080'
+# ).split(',')
 
-CORS_ALLOW_CREDENTIALS = True
+# CORS_ALLOW_CREDENTIALS = True
 
 # JWT Configuration
 from datetime import timedelta

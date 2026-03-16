@@ -13,119 +13,8 @@ from schools.models import School
 from tools.models import *
 from payments.models import *
 from leads.models import *
-def run():
-    """Seed authentication-related data. This script focuses exclusively on models
-    defined in the `authentication` app and creates minimal related objects.
-    """
-    print("Clearing existing authentication data...")
-
-    # Be careful when deleting; preserve superusers
-    Invitation.objects.all().delete()
-    PasswordResetToken.objects.all().delete()
-    EmailVerificationToken.objects.all().delete()
-    CreditTop.objects.all().delete()
-    Subscription.objects.all().delete()
-    Plan.objects.all().delete()
-    User.objects.filter(is_superuser=False).delete()
-
-    print("Creating sample plans...")
-    basic_plan = Plan.objects.create(
-        name="Basic",
-        use_type="individual",
-        total_credits=1000,
-        max_users=1,
-        monthly_price=9.99,
-    )
-
-    enterprise_plan = Plan.objects.create(
-        name="Enterprise",
-        use_type="enterprise",
-        total_credits=20000,
-        max_users=500,
-        monthly_price=499.99,
-    )
-
-    print("Creating sample users...")
-    alice = User.objects.create_user(
-        email="alice@example.com",
-        password="Password123",
-        first_name="Alice",
-        last_name="Anderson",
-        user_type="individual",
-    )
-
-    bob = User.objects.create_user(
-        email="bob@enterprise.com",
-        password="Secret456",
-        first_name="Bob",
-        last_name="Brown",
-        user_type="enterprise",
-    )
-
-    print("Creating a sample school for Bob's subscription...")
-    school = School.objects.create(
-        name="Sample Academy",
-        school_email="admin@sampleacademy.edu",
-        max_students=300,
-    )
-
-    bob.organisation = school
-    bob.save()
-
-    print("Creating sample subscriptions...")
-    Subscription.objects.create(
-        max_users=basic_plan.max_users,
-        plan=basic_plan,
-        user=alice,
-        start_credits=basic_plan.total_credits,
-        remaining_credits=basic_plan.total_credits,
-        billing_start_date=timezone.now().date(),
-        billing_end_date=timezone.now().date(),
-        status="active",
-    )
-
-    Subscription.objects.create(
-        max_users=enterprise_plan.max_users,
-        plan=enterprise_plan,
-        organisation=school,
-        start_credits=enterprise_plan.total_credits,
-        remaining_credits=enterprise_plan.total_credits,
-        billing_start_date=timezone.now().date(),
-        billing_end_date=timezone.now().date(),
-        status="active",
-    )
-
-    print("Adding a credit top-up for Alice...")
-    CreditTop.objects.create(
-        subscription=Subscription.objects.filter(user=alice).first(),
-        amount=500,
-    )
-
-    print("Generating sample tokens and invitations...")
-    EmailVerificationToken.objects.create(
-        user=alice,
-        token="verif-token-123",
-        expires_at=timezone.now() + timezone.timedelta(days=1),
-    )
-
-    PasswordResetToken.objects.create(
-        user=bob,
-        token="reset-token-456",
-        expires_at=timezone.now() + timezone.timedelta(hours=2),
-    )
-
-    Invitation.objects.create(
-        email="newuser@example.com",
-        invited_by=alice,
-        token="invite-789",
-        expires_at=timezone.now() + timezone.timedelta(days=7),
-    )
-
-    print("✅ Authentication sample data created successfully!")
 
 
-if __name__ == "__main__":
-    run()
 
 print("Creating sample Plans...")
 # Create Plans
@@ -134,23 +23,36 @@ enterprise_plan = Plan.objects.create(
     use_type="enterprise",
     total_credits=10000,
     max_users=300,
-    monthly_price=6000.00
+    monthly_price=350000,
+    allowed_modals=["gpt-4o-mini","gpt-4", "gpt-3.5", "deepseek-chat"]
 )
 
 individual_plan = Plan.objects.create(
     name="Individual Basic",
     use_type="individual",
-    total_credits=1000,
+    total_credits=12000000,
     max_users=1,
-    monthly_price=50.00
+    monthly_price=10000,
+    allowed_modals=["gpt-4o-mini","deepseek-chat"]
 )
 
 individual_pro_plan = Plan.objects.create(
     name="Individual Pro",
     use_type="individual",
-    total_credits=5000,
+    total_credits=1000,
     max_users=1,
-    monthly_price=150.00
+    monthly_price=150.00,
+    allowed_modals=["gpt-4", "gpt-3.5","deepseek-chat","gpt-4o-mini"]
+)
+
+# Add Free Plan
+free_plan = Plan.objects.create(
+    name="Individual Free",
+    use_type="individual",
+    total_credits=100,
+    max_users=1,
+    monthly_price=0.00,
+    allowed_modals=["deepseek-chat"]
 )
 
 print("Creating sample Schools and Users...")
@@ -180,6 +82,7 @@ admin_user1 = User.objects.create_user(
     first_name="James",
     last_name="Kibaki",
     user_type="enterprise",
+    role="school_admin",
     organisation=school1,
     is_staff=True
 )
@@ -190,6 +93,7 @@ admin_user2 = User.objects.create_user(
     first_name="Mary",
     last_name="Ochieng",
     user_type="enterprise",
+    role="school_admin",
     organisation=school2,
     is_staff=True
 )
@@ -200,6 +104,7 @@ admin_user3 = User.objects.create_user(
     first_name="David",
     last_name="Kipchoge",
     user_type="enterprise",
+    role="school_admin",
     organisation=school3,
     is_staff=True
 )
@@ -279,7 +184,12 @@ student1 = User.objects.create_user(
     last_name="Johnson",
     user_type="individual"
 )
-
+# user =  User.objects.get(email ="student1@email.com")
+# print(user)
+# sub  = Subscription.objects.get(user=user)
+# print(sub)
+# sub.remaining_credits +=10000
+# sub.save()
 student2 = User.objects.create_user(
     email="student2@email.com",
     password="SecurePass123!",
@@ -287,6 +197,62 @@ student2 = User.objects.create_user(
     last_name="Smith",
     user_type="individual"
 )
+
+print("Creating subscriptions for individual users...")
+# Assign plans to users (alternating for demonstration)
+teacher1_subscription = Subscription.objects.create(
+    max_users=individual_plan.max_users,
+    plan=individual_plan,
+    user=teacher1,
+    start_credits=individual_plan.total_credits,
+    remaining_credits=individual_plan.total_credits,
+    billing_start_date='2026-03-01',
+    billing_end_date='2026-04-01',
+    status="active"
+)
+teacher1.subscription_plan = individual_plan
+teacher1.save()
+
+
+# teacher2 and student2 get Free plan, teacher1 and student1 keep paid plans
+teacher2_subscription = Subscription.objects.create(
+    max_users=free_plan.max_users,
+    plan=free_plan,
+    user=teacher2,
+    start_credits=free_plan.total_credits,
+    remaining_credits=free_plan.total_credits,
+    billing_start_date='2026-03-01',
+    billing_end_date='2026-04-01',
+    status="active"
+)
+teacher2.subscription_plan = free_plan
+teacher2.save()
+
+student1_subscription = Subscription.objects.create(
+    max_users=individual_plan.max_users,
+    plan=individual_plan,
+    user=student1,
+    start_credits=individual_plan.total_credits,
+    remaining_credits=individual_plan.total_credits,
+    billing_start_date='2026-03-01',
+    billing_end_date='2026-04-01',
+    status="active"
+)
+student1.subscription_plan = individual_plan
+student1.save()
+
+student2_subscription = Subscription.objects.create(
+    max_users=free_plan.max_users,
+    plan=free_plan,
+    user=student2,
+    start_credits=free_plan.total_credits,
+    remaining_credits=free_plan.total_credits,
+    billing_start_date='2026-03-01',
+    billing_end_date='2026-04-01',
+    status="active"
+)
+student2.subscription_plan = free_plan
+student2.save()
 
 print("Creating sample Leads...")
 # Create Leads
@@ -372,151 +338,141 @@ student_category = ToolCategory.objects.create(
 )
 
 print("Creating sample AI Tools...")
-# Create AI Tools
+
+
 tool1 = AITool.objects.create(
-    slug="essay-analyzer",
-    name="Essay Analyzer",
+    slug="Scaffold",
+    name="Scaffold",
     description="Analyzes student essays and provides detailed feedback on structure, grammar, and content",
     student_friendly_name="My Essay Checker",
     categories=teacher_category,
     color="#FF6B6B",
-    system_prompt="You are an expert essay analyzer. Provide constructive feedback on essays focusing on structure, grammar, clarity, and argumentation.",
+    system_prompt="Explain [topic below] to me as if I were a beginner, then gradually increase the complexity. Start with the basics, and add real-world examples as we progress.if class provided answer in curriculum used in Uganda",
     is_premium=False,
     is_recommended=True,
-    is_active=True
+    is_active=True,
+    preferred_modal="gpt-4o-mini"
 )
 
-tool2 = AITool.objects.create(
-    slug="lesson-plan-generator",
-    name="Lesson Plan Generator",
-    description="Generates comprehensive lesson plans based on curriculum requirements",
-    student_friendly_name="Lesson Planner",
-    categories=teacher_category,
-    color="#4ECDC4",
-    system_prompt="You are an experienced curriculum designer. Create detailed, engaging lesson plans that align with educational standards.",
-    is_premium=True,
-    is_recommended=True,
-    is_active=True
-)
-
-tool3 = AITool.objects.create(
-    slug="math-problem-solver",
-    name="Math Problem Solver",
-    description="Solves math problems and explains the solution step by step",
-    student_friendly_name="Math Tutor",
-    categories=student_category,
-    color="#95E1D3",
-    system_prompt="You are a patient math tutor. Solve problems step-by-step and explain concepts clearly.",
-    is_premium=False,
-    is_recommended=True,
-    is_active=True
-)
-
-tool4 = AITool.objects.create(
-    slug="science-experiment-designer",
-    name="Science Experiment Designer",
-    description="Designs interactive science experiments suitable for different grade levels",
-    student_friendly_name="Lab Experiment Creator",
-    categories=teacher_category,
-    color="#F38181",
-    system_prompt="You are a science education expert. Design safe, engaging experiments that teach scientific principles.",
-    is_premium=True,
-    is_recommended=False,
-    is_active=True
-)
-
-tool5 = AITool.objects.create(
-    slug="writing-assistant",
-    name="Writing Assistant",
-    description="Helps students improve their writing with suggestions for clarity and style",
-    student_friendly_name="Smart Writer",
-    categories=student_category,
-    color="#AA96DA",
-    system_prompt="You are a writing coach. Help users improve their writing with constructive suggestions.",
-    is_premium=False,
-    is_recommended=True,
-    is_active=True
-)
-
-tool6 = AITool.objects.create(
-    slug="quiz-generator",
-    name="Quiz Generator",
-    description="Creates customized quizzes based on topics and difficulty levels",
-    student_friendly_name="Quiz Maker",
-    categories=teacher_category,
-    color="#FCBAD3",
-    system_prompt="You are an assessment expert. Create engaging, fair quizzes that test understanding.",
-    is_premium=False,
-    is_recommended=False,
-    is_active=True
-)
 
 print("Creating sample Tool Inputs...")
-# Create Tool Inputs for tools
 ToolInput.objects.create(
     tool=tool1,
-    type="textarea",
-    label="Student Essay",
-    placeholder="Paste the student's essay here...",
+    type="text",
+    label="Topic",
+    placeholder="Enter your topic",
     required=True,
     minlength=100,
     order=1
 )
-
 ToolInput.objects.create(
     tool=tool1,
     type="dropdown",
     label="Grade Level",
-    options=["Grade 9", "Grade 10", "Grade 11", "Grade 12"],
-    required=True,
-    order=2
-)
-
-ToolInput.objects.create(
-    tool=tool3,
-    type="textarea",
-    label="Math Problem",
-    placeholder="Enter the math problem here...",
-    required=True,
-    order=1
-)
-
-ToolInput.objects.create(
-    tool=tool3,
-    type="dropdown",
-    label="Difficulty Level",
-    options=["Easy", "Medium", "Hard"],
+    options=["S1", "S2", "S3", "S4"],
     required=False,
     order=2
 )
 
-ToolInput.objects.create(
-    tool=tool5,
-    type="textarea",
-    label="Your Text",
-    placeholder="Paste your text here for improvement suggestions...",
-    required=True,
-    minlength=50,
-    order=1
-)
 
+# Create AI Tools with preferred_modal
+tool2 = AITool.objects.create(
+    slug="bridge",
+    name="Bridge",
+    description="This tool helps students see how subjects connect, apply ideas in real life, and think creatively",
+    student_friendly_name="Bridge",
+    categories=teacher_category,
+    color="#FF6B6B",
+    system_prompt="Explore how [topic]connects with other fields or disciplines. Provide examples of cross-disciplinary applications, collaborative opportunities, and how integrating insights from different areas can enhance understanding or innovation in [topic].",
+    is_premium=False,
+    is_recommended=True,
+    is_active=True,
+    preferred_modal="gpt-4o-mini"
+)
+print("Creating sample Tool Inputs...")
 ToolInput.objects.create(
-    tool=tool6,
+    tool=tool2,
     type="text",
     label="Topic",
-    placeholder="Enter the topic for the quiz...",
+    placeholder="Enter your topic",
     required=True,
+    minlength=100,
     order=1
 )
-
 ToolInput.objects.create(
-    tool=tool6,
-    type="number",
-    label="Number of Questions",
-    placeholder="10",
-    required=True,
+    tool=tool2,
+    type="dropdown",
+    label="Grade Level",
+    options=["S1", "S2", "S3", "S4"],
+    required=False,
     order=2
 )
+
+tool3 = AITool.objects.create(
+    slug="conceptify",
+    name="Conceptify",
+    description="simplifies complex ideas",
+    student_friendly_name="Math Tutor",
+    categories=student_category,
+    color="#95E1D3",
+    system_prompt="You are a teacher following the Uganda National Curriculum. Explain the [topic] clearly using simple language suitable for the student’s level. Use well-constructed analogies and comparisons to help learners understand the concept. Relate the principles of the topic to everyday experiences in Uganda, familiar activities, or widely known phenomena. Where possible, connect the concept to examples from other subjects such as science, technology, or daily life so that the idea becomes more tangible, memorable, and easy to understand.",
+    is_premium=False,
+    is_recommended=True,
+    is_active=True,
+    preferred_modal="gpt-4o-mini"
+)
+print("Creating sample Tool Inputs...")
+ToolInput.objects.create(
+    tool=tool3,
+    type="text",
+    label="Topic",
+    placeholder="Enter your topic",
+    required=True,
+    minlength=100,
+    order=1
+)
+ToolInput.objects.create(
+    tool=tool3,
+    type="dropdown",
+    label="Grade Level",
+    options=["S1", "S2", "S3", "S4"],
+    required=False,
+    order=2
+)
+
+
+tool4 = AITool.objects.create(
+    slug="learnQuiz",
+    name="LearnQuiz",
+    description="simplifies complex ideas",
+    student_friendly_name="Math Tutor",
+    categories=student_category,
+    color="#95E1D3",
+    system_prompt="Act as a teacher following the Uganda National Curriculum. Generate 10 mixed-level questions on [topic]. Include multiple-choice, short-answer, and one long essay question. After each question, provide the correct answer and a brief explanation. Ensure the questions progress from basic to advanced understanding and use clear academic language suitable for students.",
+    is_recommended=True,
+    is_active=True,
+    preferred_modal="gpt-4o-mini"
+)
+print("Creating sample Tool Inputs...")
+ToolInput.objects.create(
+    tool=tool4,
+    type="text",
+    label="Topic",
+    placeholder="Enter your topic",
+    required=True,
+    minlength=100,
+    order=1
+)
+ToolInput.objects.create(
+    tool=tool4,
+    type="dropdown",
+    label="Grade Level",
+    options=["S1", "S2", "S3", "S4"],
+    required=False,
+    order=2
+)
+
+
 
 print("Creating sample Payments...")
 # Create Payments
@@ -628,12 +584,12 @@ ToolFavorite.objects.create(
 
 ToolFavorite.objects.create(
     user=student1,
-    tool=tool5
+    tool=tool3
 )
 
 ToolFavorite.objects.create(
     user=student2,
-    tool=tool5
+    tool=tool3
 )
 
 print("Creating sample AI Logs...")
@@ -678,4 +634,28 @@ AILog.objects.create(
 )
 
 print("✅ Sample data created successfully!")
+
+from authentication.models import User
+user = User.objects.create_user(
+        email="mugumyadavi@gmail.com",
+        password="DAVIS_1234",
+        first_name="mugumya",
+        last_name="davi",
+        user_type="individual",
+        role ='sale_manager'
+    )
+from authentication.models import *
+plan = Plan.objects.get(id=3)
+user = User.objects.get(id=5)
+subscription3 = Subscription.objects.create(
+    max_users=plan.max_users,
+    plan=plan,
+    user=user,
+    start_credits=plan.total_credits,
+    remaining_credits=plan.total_credits,
+    billing_start_date='2026-01-15',
+    billing_end_date='2026-02-15',
+    status="active")
+user.subscription_plan = plan
+user.save()
 

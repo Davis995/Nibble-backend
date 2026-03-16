@@ -107,17 +107,19 @@ class AIRequestSerializer(serializers.Serializer):
     question_type = serializers.CharField(required=False, default='multiple_choice')
     
     def validate(self, data):
-        """Custom validation - support both tool_id (new) and tool name (legacy)"""
+        """Custom validation - support both tool_id (new) and tool name (legacy), and enforce required tool inputs."""
         tool_id = data.get('tool_id')
         tool = data.get('tool')
+        tool_slug = data.get('tool_slug')
         provider = data.get('provider')
-        
+        inputs = data.get('inputs', {})
+
         # Either tool_id, tool_slug, or tool name must be provided
-        if not tool_id and not tool and not data.get('tool_slug'):
+        if not tool_id and not tool and not tool_slug:
             raise serializers.ValidationError(
                 'Either tool_id, tool_slug or tool must be provided.'
             )
-        
+
         # Dynamically validate provider if provided
         if provider:
             valid_providers = ['openai', 'deepseek']
@@ -125,7 +127,32 @@ class AIRequestSerializer(serializers.Serializer):
                 raise serializers.ValidationError({
                     'provider': f'Provider must be one of: {", ".join(valid_providers)}'
                 })
-        
+
+        # Enforce required tool inputs if tool_id or tool_slug is provided
+        from tools.models import AITool, ToolInput
+        tool_obj = None
+        if tool_id:
+            try:
+                tool_obj = AITool.objects.get(id=tool_id)
+            except AITool.DoesNotExist:
+                raise serializers.ValidationError({'tool_id': 'Invalid tool_id'})
+        elif tool_slug:
+            try:
+                tool_obj = AITool.objects.get(slug=tool_slug)
+            except AITool.DoesNotExist:
+                raise serializers.ValidationError({'tool_slug': 'Invalid tool_slug'})
+        # (Legacy) If only tool name is provided, skip required input enforcement
+        if tool_obj:
+            required_inputs = ToolInput.objects.filter(tool=tool_obj, required=True)
+            missing = []
+            for inp in required_inputs:
+                if inp.label not in inputs or inputs.get(inp.label) in [None, '']:
+                    missing.append(inp.label)
+            if missing:
+                raise serializers.ValidationError({
+                    'inputs': f'Missing required input fields: {", ".join(missing)}'
+                })
+
         return data
 
 

@@ -38,6 +38,23 @@ class UserRegistrationView(APIView):
         if serializer.is_valid():
             user = serializer.save()
             
+            # Auto-create subscription to individual free plan
+            try:
+                free_plan = Plan.objects.get(name='Individual Free')
+                Subscription.objects.create(
+                    user=user,
+                    plan=free_plan,
+                    status='active',
+                    max_users=free_plan.max_users if hasattr(free_plan, 'max_users') else 1,
+                    start_credits=free_plan.total_credits,
+                    remaining_credits=free_plan.total_credits,
+                    billing_start_date=timezone.now().date(),
+                    billing_end_date=timezone.now().date() + timedelta(days=30)
+                )
+            except Plan.DoesNotExist:
+                # If plan doesn't exist, skip or handle
+                pass
+            
             # Generate JWT tokens for auto-login after registration
             refresh = RefreshToken.for_user(user)
             access_token = str(refresh.access_token)
@@ -107,31 +124,53 @@ class UserLoginView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def _get_subscription_info(self, user):
-        """Get subscription information for the user"""
-        subscription = None
-        
+        """Get subscription information for the user.
+
+        Prefer an actual Subscription object (either tied to the user or,
+        for enterprise accounts, to the organisation). The legacy
+        ``subscription_plan`` field is used only as a fallback when no
+        active Subscription record exists.
+        """
+        # try to find a real subscription record for the user first
+        subscription = Subscription.objects.filter(user=user, status='active').order_by('-billing_end_date').first()
+        if subscription:
+            remaining_days = (subscription.billing_end_date - date.today()).days
+            # If expired, override status to 'expired'
+            status = 'expired' if remaining_days < 0 else subscription.status
+            return {
+                'plan_name': subscription.plan.name,
+                'status': status,
+                'remaining_credits': subscription.remaining_credits,
+                'billing_end_date': subscription.billing_end_date,
+                'remaining_days': max(0, remaining_days)  # Ensure non-negative
+            }
+
+        # enterprise users may have organisation subscription instead
         if user.user_type == 'enterprise' and user.organisation:
-            # For enterprise users, get organisation's active subscription
-            subscription = user.organisation.subscriptions.filter(status='active').first()
+            subscription = user.organisation.subscriptions.filter(status='active').order_by('-billing_end_date').first()
             if subscription:
                 remaining_days = (subscription.billing_end_date - date.today()).days
+                # If expired, override status to 'expired'
+                status = 'expired' if remaining_days < 0 else subscription.status
                 return {
                     'plan_name': subscription.plan.name,
-                    'status': subscription.status,
+                    'status': status,
                     'remaining_credits': subscription.remaining_credits,
                     'billing_end_date': subscription.billing_end_date,
-                    'remaining_days': remaining_days
+                    'remaining_days': max(0, remaining_days)  # Ensure non-negative
                 }
-        elif user.subscription_plan:
-            # For individual users, get user's subscription plan
+
+        # legacy behavior: fall back to subscription_plan field if set
+        if user.subscription_plan:
             plan = user.subscription_plan
             return {
                 'plan_name': plan.name,
-                'status': 'active',  # Assuming active if assigned
-                'remaining_credits': plan.total_credits,  # Or some logic
+                'status': 'active',  # assume active when assigned
+                'remaining_credits': plan.total_credits,
                 'billing_end_date': None,
                 'remaining_days': None
             }
+
         return None
 
     def _get_trial_remaining_days(self, user):
