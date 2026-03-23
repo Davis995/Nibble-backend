@@ -50,9 +50,9 @@ class Plan(models.Model):
         verbose_name = 'Plan'
         verbose_name_plural = 'Plans'
         constraints = [
-            models.CheckConstraint(condition=models.Q(use_type__in=['individual', 'enterprise']), name='plan_use_type_valid'),
-            models.CheckConstraint(condition=models.Q(monthly_price__gte=0), name='monthly_price_non_negative'),
-            models.CheckConstraint(condition=models.Q(annual_price__gte=0), name='annual_price_non_negative'),
+            models.CheckConstraint(check=models.Q(use_type__in=['individual', 'enterprise']), name='plan_use_type_valid'),
+            models.CheckConstraint(check=models.Q(monthly_price__gte=0), name='monthly_price_non_negative'),
+            models.CheckConstraint(check=models.Q(annual_price__gte=0), name='annual_price_non_negative'),
         ]
         indexes = [
             models.Index(fields=['name']),
@@ -207,7 +207,7 @@ class User(AbstractUser):
         ordering = ['-created_at']
         constraints = [
             models.CheckConstraint(
-                condition=(
+                check=(
                     models.Q(user_type='individual') | 
                     (models.Q(user_type='enterprise') & models.Q(organisation__isnull=False))
                 ),
@@ -294,7 +294,7 @@ class Subscription(models.Model):
         verbose_name_plural = 'Subscriptions'
         constraints = [
             models.CheckConstraint(
-                condition=(
+                check=(
                     (models.Q(user__isnull=False) & models.Q(organisation__isnull=True)) |
                     (models.Q(user__isnull=True) & models.Q(organisation__isnull=False))
                 ),
@@ -331,7 +331,7 @@ class CreditTop(models.Model):
         verbose_name = 'Credit Top'
         verbose_name_plural = 'Credit Tops'
         constraints = [
-            models.CheckConstraint(condition=models.Q(credit_add__gt=0), name='credit_add_positive'),
+            models.CheckConstraint(check=models.Q(credit_add__gt=0), name='credit_add_positive'),
         ]
         indexes = [
             models.Index(fields=['subscription']),

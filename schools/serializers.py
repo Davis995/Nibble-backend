@@ -216,7 +216,7 @@ class StudentSerializer(serializers.ModelSerializer):
             'full_name', 'school_email', 'student_code', 'is_active',
             'created_at', 'updated_at', 'last_login_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'last_login_at', 'school_email']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'last_login_at', 'school_email', 'is_active']
 
     def get_full_name(self, obj):
         return obj.get_full_name()

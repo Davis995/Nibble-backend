@@ -17,6 +17,7 @@ class ToolCategory(models.Model):
     
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField()
+    icon = models.CharField(max_length=100, blank=True, null=True, help_text="Optional icon name for frontend display")
     type = models.CharField(max_length=10, choices=CATEGORY_TYPES)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -39,7 +40,7 @@ class AITool(models.Model):
     description = models.TextField()
     student_friendly_name = models.CharField(max_length=255)
     categories = models.ForeignKey(ToolCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='tools')
-    icon = models.FileField(upload_to='tool_icons/', null=True, blank=True)
+    icon = models.CharField(max_length=50,null=True,blank=True)
     color = models.CharField(max_length=7, default='#000000', help_text="Hex color code")
     system_prompt = models.TextField(blank=True, null=True)
     is_premium = models.BooleanField(default=False)
@@ -99,6 +100,7 @@ class AILog(models.Model):
     cost = models.DecimalField(max_digits=10, decimal_places=6, default=0)
     
     # Request/Response data
+    inputs = models.JSONField(null=True, blank=True)
     prompt = models.TextField()
     response = models.TextField()
     

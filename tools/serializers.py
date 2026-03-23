@@ -9,7 +9,7 @@ from decimal import Decimal
 class ToolCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = ToolCategory
-        fields = ['id', 'name', 'description', 'type', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'description', 'icon', 'type', 'created_at', 'updated_at']
 
 
 class ToolInputSerializer(serializers.ModelSerializer):
@@ -175,7 +175,7 @@ class AILogSerializer(serializers.ModelSerializer):
         model = AILog
         fields = [
             'id', 'username', 'user', 'tool', 'topic', 'class_level',
-            'difficulty', 'prompt_tokens', 'completion_tokens', 
+            'difficulty', 'inputs', 'prompt_tokens', 'completion_tokens', 
             'total_tokens', 'cost', 'cost_display', 'response',
             'provider', 'created_at', 'response_time'
         ]

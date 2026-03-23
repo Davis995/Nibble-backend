@@ -311,6 +311,31 @@ class TestModels:
         """Test AITool string representation"""
         assert str(ai_tool) == 'Topic Explainer'
 
+    def test_tool_list_view_search(self, api_client, user):
+        """Test tool list search filtering works"""
+        AITool.objects.create(
+            slug='math-explainer',
+            name='math_explainer',
+            student_friendly_name='Math Explainer',
+            description='Explain math concepts',
+            is_active=True
+        )
+        AITool.objects.create(
+            slug='science-helper',
+            name='science_helper',
+            student_friendly_name='Science Helper',
+            description='Assist with science',
+            is_active=True
+        )
+
+        api_client.force_authenticate(user=user)
+        url = reverse('nibble_ai:tool-list')
+        response = api_client.get(url, {'search': 'math'})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 1
+        assert response.data['results'][0]['name'] == 'math_explainer'
+
 
 @pytest.mark.django_db
 class TestPromptBuilder:

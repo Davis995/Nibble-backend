@@ -21,6 +21,8 @@ from .serializers import InvitationCreateSerializer, InvitationAcceptSerializer
 from .models import Invitation
 import secrets, urllib.parse
 from django.conf import settings
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -40,7 +42,7 @@ class UserRegistrationView(APIView):
             
             # Auto-create subscription to individual free plan
             try:
-                free_plan = Plan.objects.get(name='Individual Free')
+                free_plan = Plan.objects.get(name='Free')
                 Subscription.objects.create(
                     user=user,
                     plan=free_plan,
@@ -175,6 +177,118 @@ class UserLoginView(APIView):
 
     def _get_trial_remaining_days(self, user):
         """Get remaining trial days for the user"""
+        if user.is_trial_active() and user.end_trial:
+            return (user.end_trial - date.today()).days
+        return 0
+
+
+class GoogleLoginView(APIView):
+    """POST: Google OAuth2 login with id_token"""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        token = request.data.get('token') or request.data.get('id_token')
+        if not token:
+            return Response({'error': 'Google token is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            audience = getattr(settings, 'GOOGLE_CLIENT_ID', None)
+            if audience:
+                id_info = id_token.verify_oauth2_token(token, google_requests.Request(), audience=audience)
+            else:
+                id_info = id_token.verify_oauth2_token(token, google_requests.Request())
+        except ValueError:
+            return Response({'error': 'Invalid Google token'}, status=status.HTTP_400_BAD_REQUEST)
+
+        email = id_info.get('email')
+        if not email:
+            return Response({'error': 'Google token does not contain email'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not id_info.get('email_verified', False):
+            return Response({'error': 'Google email is not verified'}, status=status.HTTP_400_BAD_REQUEST)
+
+        first_name = id_info.get('given_name', '')
+        last_name = id_info.get('family_name', '')
+
+        created = False
+        user = None
+        try:
+            user = User.objects.get(email__iexact=email)
+        except User.DoesNotExist:
+            user = User(
+                username=email,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                role='student',
+                user_type='individual',
+                is_active=True
+            )
+            user.set_password(User.objects.make_random_password())
+            user.save()
+            created = True
+
+            # auto-create subscription to free plan for new users, as in registration workflow
+            try:
+                free_plan = Plan.objects.get(name='Free')
+                Subscription.objects.create(
+                    user=user,
+                    plan=free_plan,
+                    status='active',
+                    max_users=free_plan.max_users if hasattr(free_plan, 'max_users') else 1,
+                    start_credits=free_plan.total_credits,
+                    remaining_credits=free_plan.total_credits,
+                    billing_start_date=timezone.now().date(),
+                    billing_end_date=timezone.now().date() + timedelta(days=30)
+                )
+            except Plan.DoesNotExist:
+                pass
+
+        if not user.is_active:
+            return Response({'error': 'User account is disabled'}, status=status.HTTP_403_FORBIDDEN)
+
+        user.last_login_at = timezone.now()
+        user.save(update_fields=['last_login_at'])
+
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+        refresh_token = str(refresh)
+
+        subscription_info = None
+        try:
+            subscription_info = UserLoginView()._get_subscription_info(user)
+        except Exception:
+            subscription_info = None
+
+        response_data = {
+            'message': 'Login successful',
+            'is_new_user': created,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'role': 'superuser' if user.is_superuser else user.role,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'is_superuser': user.is_superuser,
+                'is_staff': user.is_staff,
+                'user_type': user.user_type,
+                'organisation': user.organisation.name if user.organisation else None,
+                'organisation_id': str(user.organisation.id) if getattr(user, 'organisation', None) else None,
+                'is_trial_active': user.is_trial_active(),
+                'trial_remaining_days': self._get_trial_remaining_days(user),
+                'subscription': subscription_info
+            },
+            'tokens': {
+                'access': access_token,
+                'refresh': refresh_token
+            }
+        }
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    def _get_trial_remaining_days(self, user):
         if user.is_trial_active() and user.end_trial:
             return (user.end_trial - date.today()).days
         return 0

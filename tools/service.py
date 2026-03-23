@@ -129,6 +129,12 @@ class AIProviderRouter:
         
         selected_provider = self.get_provider(provider)
         
+        # If fallback happened due to missing configs upstream, fix the model to match provider
+        if selected_provider == self.PROVIDER_OPENAI and model == 'deepseek-chat':
+            model = 'gpt-4o-mini'
+        elif selected_provider == self.PROVIDER_DEEPSEEK and model and 'gpt' in model:
+            model = 'deepseek-chat'
+
         try:
             call_kwargs = dict(kwargs)
             if model:
@@ -142,14 +148,12 @@ class AIProviderRouter:
             if selected_provider == self.PROVIDER_OPENAI and self.deepseek_client:
                 print(f"OpenAI call failed: {e}. Switching to DeepSeek...")
                 call_kwargs = dict(kwargs)
-                if model:
-                    call_kwargs['model'] = model
+                call_kwargs['model'] = 'deepseek-chat'
                 return self._call_deepseek(system_prompt, user_prompt, **call_kwargs)
             elif selected_provider == self.PROVIDER_DEEPSEEK and self.openai_client:
                 print(f"DeepSeek call failed: {e}. Switching to OpenAI...")
                 call_kwargs = dict(kwargs)
-                if model:
-                    call_kwargs['model'] = model
+                call_kwargs['model'] = 'gpt-4o-mini'
                 return self._call_openai(system_prompt, user_prompt, **call_kwargs)
             raise
     

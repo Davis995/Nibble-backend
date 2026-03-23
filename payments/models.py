@@ -47,14 +47,14 @@ class Payment(models.Model):
         verbose_name_plural = 'Payments'
         constraints = [
             models.CheckConstraint(
-                condition=(
+                check=(
                     (models.Q(user__isnull=False) & models.Q(organisation__isnull=True)) |
                     (models.Q(user__isnull=True) & models.Q(organisation__isnull=False))
                 ),
                 name='payment_belongs_to_user_or_organisation'
             ),
-            models.CheckConstraint(condition=models.Q(payment_type__in=['subscription', 'topup']), name='payment_type_valid'),
-            models.CheckConstraint(condition=models.Q(status__in=['pending', 'complete', 'failed', 'cancelled']), name='payment_status_valid'),
+            models.CheckConstraint(check=models.Q(payment_type__in=['subscription', 'topup']), name='payment_type_valid'),
+            models.CheckConstraint(check=models.Q(status__in=['pending', 'complete', 'failed', 'cancelled']), name='payment_status_valid'),
         ]
         indexes = [
             models.Index(fields=['merchant_reference']),
@@ -104,13 +104,13 @@ class Invoice(models.Model):
         verbose_name_plural = 'Invoices'
         constraints = [
             models.CheckConstraint(
-                condition=(
+                check=(
                     (models.Q(user__isnull=False) & models.Q(organisation__isnull=True)) |
                     (models.Q(user__isnull=True) & models.Q(organisation__isnull=False))
                 ),
                 name='invoice_belongs_to_user_or_organisation'
             ),
-            models.CheckConstraint(condition=models.Q(status__in=['unpaid', 'paid', 'overdue', 'cancelled']), name='invoice_status_valid'),
+            models.CheckConstraint(check=models.Q(status__in=['unpaid', 'paid', 'overdue', 'cancelled']), name='invoice_status_valid'),
         ]
         indexes = [
             models.Index(fields=['invoice_number']),

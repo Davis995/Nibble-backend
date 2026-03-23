@@ -3,6 +3,8 @@ from .views import (
     AIRequestView,
     AILogListView,
     AILogDetailView,
+    AILogHistoryModalView,
+    AILogHistoryModalDetailView,
     AdminDashboardView,
     ToolAnalyticsView,
     UserAnalyticsView,
@@ -12,6 +14,8 @@ from .views import (
     ToolCategoryListView,
     ToolCategoryDetailView,
     ToolRecommendedView,
+    TeacherDashboardView,
+    StudentDashboardView,
     ToolFavoritesListView,
     ToolFavoriteToggleView
     , ChatAPIView, ChatDetailAPIView, ChatMessagesAPIView, ChatReplyAPIView,
@@ -28,6 +32,8 @@ urlpatterns = [
     # Tools
     path('', ToolListView.as_view(), name='tool-list'),
     path('recommended/', ToolRecommendedView.as_view(), name='tool-recommended'),
+    path('teacher-dashboard/', TeacherDashboardView.as_view(), name='teacher-dashboard'),
+    path('student-dashboard/', StudentDashboardView.as_view(), name='student-dashboard'),
     path('my-favorites/', ToolFavoritesListView.as_view(), name='tool-favorites'),
     path('<slug:tool_slug>/favorite/', ToolFavoriteToggleView.as_view(), name='tool-favorite-toggle'),
     
@@ -39,6 +45,8 @@ urlpatterns = [
     
     # User AI Logs
     path('logs/', AILogListView.as_view(), name='ai-logs-list'),
+    path('logs/history/', AILogHistoryModalView.as_view(), name='ai-log-history-modal'),
+    path('logs/history/<int:log_id>/', AILogHistoryModalDetailView.as_view(), name='ai-log-history-modal-detail'),
     path('logs/<int:log_id>/', AILogDetailView.as_view(), name='ai-log-detail'),
     
     # Available Tools

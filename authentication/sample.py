@@ -28,7 +28,7 @@ enterprise_plan = Plan.objects.create(
 )
 
 individual_plan = Plan.objects.create(
-    name="Individual Basic",
+    name=" Basic",
     use_type="individual",
     total_credits=12000000,
     max_users=1,
@@ -37,9 +37,9 @@ individual_plan = Plan.objects.create(
 )
 
 individual_pro_plan = Plan.objects.create(
-    name="Individual Pro",
+    name="Pro",
     use_type="individual",
-    total_credits=1000,
+    total_credits=100000,
     max_users=1,
     monthly_price=150.00,
     allowed_modals=["gpt-4", "gpt-3.5","deepseek-chat","gpt-4o-mini"]
@@ -47,9 +47,9 @@ individual_pro_plan = Plan.objects.create(
 
 # Add Free Plan
 free_plan = Plan.objects.create(
-    name="Individual Free",
+    name="Free",
     use_type="individual",
-    total_credits=100,
+    total_credits=120000,
     max_users=1,
     monthly_price=0.00,
     allowed_modals=["deepseek-chat"]
@@ -78,7 +78,7 @@ school3 = School.objects.create(
 # Create admin users for schools
 admin_user1 = User.objects.create_user(
     email="admin1@nairobi-intl.edu",
-    password="SecurePass123!",
+    password="DAVIS_1234",
     first_name="James",
     last_name="Kibaki",
     user_type="enterprise",
@@ -89,7 +89,7 @@ admin_user1 = User.objects.create_user(
 
 admin_user2 = User.objects.create_user(
     email="admin2@mombasa-academy.edu",
-    password="SecurePass123!",
+    password="DAVIS_1234",
     first_name="Mary",
     last_name="Ochieng",
     user_type="enterprise",
@@ -100,12 +100,36 @@ admin_user2 = User.objects.create_user(
 
 admin_user3 = User.objects.create_user(
     email="admin3@kisumu-high.edu",
-    password="SecurePass123!",
+    password="DAVIS_1234",
     first_name="David",
     last_name="Kipchoge",
     user_type="enterprise",
     role="school_admin",
     organisation=school3,
+    is_staff=True
+)
+
+# Additional staff role for testing (designated curriculum coach)
+staff_user1 = User.objects.create_user(
+    email="coach1@nairobi-intl.edu",
+    password="DAVIS_1234",
+    first_name="Grace",
+    last_name="Mwangi",
+    user_type="enterprise",
+    role="curriculum_coach",
+    organisation=school1,
+    is_staff=True
+)
+
+# Additional staff role for communications
+staff_user2 = User.objects.create_user(
+    email="comm1@mombasa-academy.edu",
+    password="DAVIS_1234",
+    first_name="Peter",
+    last_name="Njoroge",
+    user_type="enterprise",
+    role="parent_liaison",
+    organisation=school2,
     is_staff=True
 )
 
@@ -163,36 +187,34 @@ print("Creating sample individual Users...")
 # Create individual users
 teacher1 = User.objects.create_user(
     email="teacher1@email.com",
-    password="SecurePass123!",
+    password="DAVIS_1234",
     first_name="Sarah",
     last_name="Mwangi",
-    user_type="individual"
+    user_type="individual",
+    role="teacher"
 )
 
 teacher2 = User.objects.create_user(
     email="teacher2@email.com",
-    password="SecurePass123!",
+    password="DAVIS_1234",
     first_name="Michael",
     last_name="Kipchoge",
-    user_type="individual"
+    user_type="individual",
+    role="teacher"
 )
 
 student1 = User.objects.create_user(
     email="student1@email.com",
-    password="SecurePass123!",
+    password="DAVIS_1234",
     first_name="Emma",
     last_name="Johnson",
     user_type="individual"
+    
 )
-# user =  User.objects.get(email ="student1@email.com")
-# print(user)
-# sub  = Subscription.objects.get(user=user)
-# print(sub)
-# sub.remaining_credits +=10000
-# sub.save()
+
 student2 = User.objects.create_user(
     email="student2@email.com",
-    password="SecurePass123!",
+    password="DAVIS_1234",
     first_name="Liam",
     last_name="Smith",
     user_type="individual"
@@ -326,15 +348,38 @@ lead4 = Lead.objects.create(
 print("Creating sample Tool Categories...")
 # Create Tool Categories
 teacher_category = ToolCategory.objects.create(
-    name="Teacher Tools",
+    name="Learning Enhancement ",
     description="AI tools designed for teachers to enhance classroom experience",
-    type="teacher"
+    type="teacher",
+    icon="FileText"
+)
+
+assessment_category = ToolCategory.objects.create(
+    name="planning ",
+    description="Tools to create quizzes, tests, and analyze student performance",
+    type="teacher",
+    icon="CheckCircle"
+)
+
+communication_category = ToolCategory.objects.create(
+    name="Communication Tools",
+    description="Tools for parent-teacher communication and classroom messaging",
+    type="teacher",
+    icon="MessageSquare"
+)
+
+support_category = ToolCategory.objects.create(
+    name="Student Support Tools",
+    description="Tools for personalized learning accommodations and student support",
+    type="teacher",
+    icon="Users"
 )
 
 student_category = ToolCategory.objects.create(
     name="Student Tools",
     description="AI tools designed for students to improve learning",
-    type="student"
+    type="student",
+    icon="Zap"
 )
 
 print("Creating sample AI Tools...")
@@ -344,7 +389,7 @@ tool1 = AITool.objects.create(
     slug="Scaffold",
     name="Scaffold",
     description="Analyzes student essays and provides detailed feedback on structure, grammar, and content",
-    student_friendly_name="My Essay Checker",
+    student_friendly_name="Scaffold",
     categories=teacher_category,
     color="#FF6B6B",
     system_prompt="Explain [topic below] to me as if I were a beginner, then gradually increase the complexity. Start with the basics, and add real-world examples as we progress.if class provided answer in curriculum used in Uganda",
@@ -383,6 +428,7 @@ tool2 = AITool.objects.create(
     student_friendly_name="Bridge",
     categories=teacher_category,
     color="#FF6B6B",
+    icon="",
     system_prompt="Explore how [topic]connects with other fields or disciplines. Provide examples of cross-disciplinary applications, collaborative opportunities, and how integrating insights from different areas can enhance understanding or innovation in [topic].",
     is_premium=False,
     is_recommended=True,
@@ -397,7 +443,10 @@ ToolInput.objects.create(
     placeholder="Enter your topic",
     required=True,
     minlength=100,
-    order=1
+    order=1,
+   
+
+
 )
 ToolInput.objects.create(
     tool=tool2,
@@ -405,20 +454,22 @@ ToolInput.objects.create(
     label="Grade Level",
     options=["S1", "S2", "S3", "S4"],
     required=False,
-    order=2
+    order=2,
+
 )
 
 tool3 = AITool.objects.create(
     slug="conceptify",
     name="Conceptify",
     description="simplifies complex ideas",
-    student_friendly_name="Math Tutor",
+    student_friendly_name="Conceptify",
     categories=student_category,
     color="#95E1D3",
     system_prompt="You are a teacher following the Uganda National Curriculum. Explain the [topic] clearly using simple language suitable for the student’s level. Use well-constructed analogies and comparisons to help learners understand the concept. Relate the principles of the topic to everyday experiences in Uganda, familiar activities, or widely known phenomena. Where possible, connect the concept to examples from other subjects such as science, technology, or daily life so that the idea becomes more tangible, memorable, and easy to understand.",
     is_premium=False,
     is_recommended=True,
     is_active=True,
+    icon="Globe",
     preferred_modal="gpt-4o-mini"
 )
 print("Creating sample Tool Inputs...")
@@ -445,7 +496,7 @@ tool4 = AITool.objects.create(
     slug="learnQuiz",
     name="LearnQuiz",
     description="simplifies complex ideas",
-    student_friendly_name="Math Tutor",
+    student_friendly_name="LearnQuiz",
     categories=student_category,
     color="#95E1D3",
     system_prompt="Act as a teacher following the Uganda National Curriculum. Generate 10 mixed-level questions on [topic]. Include multiple-choice, short-answer, and one long essay question. After each question, provide the correct answer and a brief explanation. Ensure the questions progress from basic to advanced understanding and use clear academic language suitable for students.",
@@ -472,7 +523,112 @@ ToolInput.objects.create(
     order=2
 )
 
+# Additional search-style teacher tools
+extra_tool_data = [
+    ('real-world-connections', 'Real World Connections', 'Real World Connections', 'Generate real-world examples for what you are learning about!', '#22C55E', 'Link', 'Topic or concept'),
+    ('research-assistant', 'Research Assistant', 'Research Assistant', 'Find information and sources for a research project.', '#8B5CF6', 'Search', 'Research topic or question'),
+    ('rewrite-it', 'Rewrite It!', 'Rewrite It!', 'Take any text and rewrite it with custom criteria.', '#EC4899', 'Edit3', 'Text to rewrite'),
+    ('song-generator', 'Song Generator', 'Song Generator', 'Write a custom song about any topic to the tune of your choice.', '#F59E0B', 'Music', 'Song theme or topic'),
+    ('translate-it', 'Translate It!', 'Translate It!', 'Take any text and translate it into any language instantly.', '#0EA5E9', 'Globe', 'Text to translate'),
+    ('summarize-it', 'Summarize It!', 'Summarize It!', 'Take any text and summarize it in whatever length you choose.', '#22D3EE', 'FileText', 'Text to summarize'),
+    ('5-questions', '5 Questions', '5 Questions', 'Get AI to ask 5 questions to push your creativity and deepen thinking.', '#6EE7B7', 'QuestionMarkCircle', 'Topic for questions'),
+    ('book-suggestions', 'Book Suggestions', 'Book Suggestions', 'Discover books that match your interests.', '#A3E635', 'BookOpen', 'Genre or interest'),
+    ('conceptual-understanding', 'Conceptual Understanding', 'Conceptual Understanding', 'Generate ideas about how to grow conceptual understanding of concepts.', '#60A5FA', 'Lightbulb', 'Concept area'),
+    ('expand-on-idea', 'Expand on My Idea', 'Expand on My Idea', 'Use AI to expand on your ideas to help you be creative.', '#F97316', 'LayoutGrid', 'Idea description'),
+    ('idea-generator', 'Idea Generator', 'Idea Generator', 'Get help coming up with ideas on any topic.', '#6366F1', 'Sparkles', 'Topic or prompt'),
+    ('informational-texts', 'Informational Texts', 'Informational Texts', 'Generate original informational texts customized to a topic of your choice.', '#A78BFA', 'AlignJustify', 'Subject text'),
+    ('joke-creator', 'Joke Creator', 'Joke Creator', 'Generate jokes based on any topic to be the coolest student out there.', '#F43F5E', 'Smile', 'Topic or keyword'),
+    ('make-it-relevant', 'Make it Relevant!', 'Make it Relevant!', 'Generate ideas that make what you’re learning relevant based on your interests and background.', '#FBBF24', 'Heart', 'Learning topic'),
+    ('multiple-explanations', 'Multiple Explanations', 'Multiple Explanations', 'Generate clear explanations of concepts that you’re learning to get a better understanding.', '#38BDF8', 'BookOpen', 'Concept to explain'),
+    ('quiz-me', 'Quiz Me!', 'Quiz Me!', 'Quiz yourself on any topic or type of text.', '#BBF7D0', 'ClipboardCheck', 'Topic to quiz'),
+]
 
+for slug_val, name, friendly, desc, color, icon_name, placeholder in extra_tool_data:
+    tool, created = AITool.objects.update_or_create(
+        slug=slug_val,
+        defaults={
+            'name': name,
+            'description': desc,
+            'student_friendly_name': friendly,
+            'categories': teacher_category,
+            'color': color,
+            'icon': icon_name,
+            'system_prompt': '',
+            'is_premium': False,
+            'is_recommended': True,
+            'is_active': True,
+            'preferred_modal': 'gpt-4o-mini',
+        }
+    )
+    
+    # Determine the input type based on placeholder length/content
+    input_type = 'textarea' if 'Text to' in placeholder or 'Subject text' in placeholder else 'text'
+    
+    ToolInput.objects.get_or_create(
+        tool=tool,
+        label="Topic" if input_type == 'text' else "Context",
+        defaults={
+            'type': input_type,
+            'placeholder': placeholder,
+            'required': True,
+            'minlength': 3,
+            'order': 1
+        }
+    )
+
+print("Creating extra sample Student Tools...")
+student_tool_data = [
+    ('study-buddy', 'Study Buddy', 'Study Buddy', 'Get help understanding difficult concepts in a friendly way.', '#10B981', 'Users', 'Topic you need help with'),
+    ('flashcard-maker', 'Flashcard Maker', 'Flashcard Maker', 'Generate flashcards to help memorize facts and definitions.', '#3B82F6', 'CreditCard', 'Subject or list of terms'),
+    ('essay-outliner', 'Essay Outliner', 'Essay Outliner', 'Structure your thoughts into a clear essay outline.', '#8B5CF6', 'AlignLeft', 'Essay topic or prompt'),
+    ('math-step-by-step', 'Math Step-by-Step', 'Math Solver', 'Get step-by-step breakdowns of math problems.', '#EF4444', 'Hash', 'Math equation or problem'),
+    ('grammar-checker', 'Grammar Checker', 'Grammar Fix', 'Check your writing for grammar and spelling mistakes.', '#F59E0B', 'CheckSquare', 'Text to check'),
+]
+
+for slug_val, name, friendly, desc, color, icon_name, placeholder in student_tool_data:
+    tool, created = AITool.objects.update_or_create(
+        slug=slug_val,
+        defaults={
+            'name': name,
+            'description': desc,
+            'student_friendly_name': friendly,
+            'categories': student_category,  # assign to student category
+            'color': color,
+            'icon': icon_name,
+            'system_prompt': '',
+            'is_premium': False,
+            'is_recommended': True,
+            'is_active': True,
+            'preferred_modal': 'gpt-4o-mini',
+        }
+    )
+    
+    input_type = 'textarea' if 'Text to' in placeholder or 'list of' in placeholder else 'text'
+    
+    # First input based on placeholder
+    ToolInput.objects.get_or_create(
+        tool=tool,
+        label="Context" if input_type == 'textarea' else "Topic",
+        defaults={
+            'type': input_type,
+            'placeholder': placeholder,
+            'required': True,
+            'minlength': 3,
+            'order': 1
+        }
+    )
+    
+    # Second optional dropdown input reflecting the student tools inputs
+    ToolInput.objects.get_or_create(
+        tool=tool,
+        label="Grade Level",
+        defaults={
+            'type': 'dropdown',
+            'options': ["Primary", "S1", "S2", "S3", "S4", "A-Level"],
+            'required': False,
+            'order': 2
+        }
+    )
 
 print("Creating sample Payments...")
 # Create Payments
@@ -562,35 +718,33 @@ UserAIUsage.objects.create(
 
 print("Creating sample Tool Favorites...")
 # Create Tool Favorites
-ToolFavorite.objects.create(
-    user=teacher1,
-    tool=tool1
-)
+ToolFavorite.objects.create(user=teacher1, tool=tool1)
+ToolFavorite.objects.create(user=teacher2, tool=tool3)
+ToolFavorite.objects.create(user=student1, tool=tool3)
+ToolFavorite.objects.create(user=student2, tool=tool1)
 
-ToolFavorite.objects.create(
-    user=teacher1,
-    tool=tool2
-)
+# More Favorites for teachers
+song_gen = AITool.objects.filter(slug='song-generator').first()
+if song_gen:
+    ToolFavorite.objects.create(user=teacher1, tool=song_gen)
 
-ToolFavorite.objects.create(
-    user=teacher2,
-    tool=tool3
-)
+quiz_me = AITool.objects.filter(slug='quiz-me').first()
+if quiz_me:
+    ToolFavorite.objects.create(user=teacher2, tool=quiz_me)
 
-ToolFavorite.objects.create(
-    user=student1,
-    tool=tool3
-)
+# More Favorites for students
+study_buddy = AITool.objects.filter(slug='study-buddy').first()
+if study_buddy:
+    ToolFavorite.objects.create(user=student1, tool=study_buddy)
+    ToolFavorite.objects.create(user=student2, tool=study_buddy)
 
-ToolFavorite.objects.create(
-    user=student1,
-    tool=tool3
-)
+essay_outliner = AITool.objects.filter(slug='essay-outliner').first()
+if essay_outliner:
+    ToolFavorite.objects.create(user=student1, tool=essay_outliner)
 
-ToolFavorite.objects.create(
-    user=student2,
-    tool=tool3
-)
+math_solver = AITool.objects.filter(slug='math-step-by-step').first()
+if math_solver:
+    ToolFavorite.objects.create(user=student2, tool=math_solver)
 
 print("Creating sample AI Logs...")
 # Create AI Logs
@@ -600,6 +754,12 @@ AILog.objects.create(
     topic="Literature",
     class_level="Grade 10",
     difficulty="Medium",
+    inputs={
+        "topic": "Literature",
+        "grade": "Grade 10",
+        "difficulty": "Medium",
+        "text_to_analyze": "The Great Gatsby represents the decay of the American Dream..."
+    },
     prompt_tokens=150,
     completion_tokens=450,
     prompt="Analyze this essay...",
@@ -613,6 +773,12 @@ AILog.objects.create(
     topic="Algebra",
     class_level="Grade 9",
     difficulty="Easy",
+    inputs={
+        "topic": "Algebra",
+        "grade": "Grade 9",
+        "difficulty": "Easy",
+        "equation": "2x + 5 = 15"
+    },
     prompt_tokens=100,
     completion_tokens=300,
     prompt="Solve: 2x + 5 = 15",
@@ -626,11 +792,53 @@ AILog.objects.create(
     topic="Science",
     class_level="Grade 11",
     difficulty="Hard",
+    inputs={
+        "topic": "Photosynthesis",
+        "grade": "11th Grade",
+        "duration": "90 minutes",
+        "subject": "Biology"
+    },
     prompt_tokens=200,
     completion_tokens=800,
     prompt="Generate a lesson plan for photosynthesis...",
     response="Lesson Plan: Introduction to Photosynthesis...",
     response_time=5.8
+)
+
+AILog.objects.create(
+    user=teacher1,
+    tool="Rubric Generator",
+    topic="History Essay Rubric",
+    class_level="Grade 10",
+    difficulty="Hard",
+    inputs={
+        "assignment": "History Essay",
+        "criteria": "Thesis, Evidence, Organization, Grammar",
+        "scale": "4-point"
+    },
+    prompt_tokens=120,
+    completion_tokens=500,
+    prompt="Create a 4-point rubric for a high school history essay.",
+    response="| Criteria | 4 - Excellent | 3 - Proficient | 2 - Developing | 1 - Beginning |\n|---|---|---|---|---|\n| **Thesis** | Clear, arguable thesis statement. | Thesis is present but could be stronger. | Thesis is vague or weak. | No thesis statement. |\n| **Evidence** | Strong evidence supports all claims. | Good evidence supports most claims. | Some evidence, but weak connections. | Little to no evidence used. |",
+    response_time=3.5
+)
+
+AILog.objects.create(
+    user=student2,
+    tool="Multiple Explanations",
+    topic="Quantum Computing",
+    class_level="Grade 12",
+    difficulty="Hard",
+    inputs={
+        "concept": "Quantum Computing",
+        "audience": "High School Student",
+        "analogy_preference": "Sports"
+    },
+    prompt_tokens=90,
+    completion_tokens=650,
+    prompt="Explain Quantum Computing to a High School Student using Sports analogies.",
+    response="Imagine a regular computer as a baseball game where pitches are either fastballs (1s) or curveballs (0s)...",
+    response_time=4.1
 )
 
 print("✅ Sample data created successfully!")

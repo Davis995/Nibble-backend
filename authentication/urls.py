@@ -16,6 +16,9 @@ urlpatterns = [
     # School-based Student Login (school email + student code)
     path('school-login/', StudentSchoolLoginView.as_view(), name='school_login'),
 
+    # Google OAuth2 login
+    path('google-login/', GoogleLoginView.as_view(), name='google-login'),
+
     # JWT Token Refresh
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 

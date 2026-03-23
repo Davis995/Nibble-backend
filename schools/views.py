@@ -28,7 +28,7 @@ from datetime import timedelta
 from django.db.models import Count, Sum, Q
 from django.db.models.functions import TruncMonth, TruncDay
 from django.db import IntegrityError
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from authentication.models import Plan, Subscription
 from leads.models import Onboarding
 from leads.models import DemoSchedule as LeadDemoSchedule
@@ -323,7 +323,7 @@ class SchoolDetailView(APIView):
         """Update school"""
         try:
             school = School.objects.get(id=school_id)
-            serializer = SchoolSerializer(school, data=request.data)
+            serializer = SchoolSerializer(school, data=request.data, partial=True)
             if serializer.is_valid():
                 serializer.save()
                 return Response(serializer.data)
@@ -356,9 +356,41 @@ class StudentListCreateView(APIView):
         """List students for a school"""
         try:
             school = School.objects.get(id=school_id)
-            students = Student.objects.filter(school=school).order_by('last_name', 'first_name')
+            qs = Student.objects.filter(school=school)
+
+            search = request.query_params.get('search')
+            if search:
+                qs = qs.filter(
+                    Q(first_name__icontains=search) | 
+                    Q(last_name__icontains=search) | 
+                    Q(school_email__icontains=search) | 
+                    Q(student_code__icontains=search)
+                )
+
+            qs = qs.order_by('last_name', 'first_name')
+
+            page = int(request.query_params.get('page', 0))
+            limit = int(10)
+            limit = max(1, min(limit, 200))
+
+            total = qs.count()
+            start = page * limit
+            students = qs[start:start+limit]
+
             serializer = StudentSerializer(students, many=True)
-            return Response(serializer.data)
+            
+            return Response({
+                'success': True,
+                'data': {
+                    'students': serializer.data,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'totalPages': (total + limit - 1) // limit if limit else 0
+                    }
+                }
+            })
         except School.DoesNotExist:
             return Response({'error': 'School not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -448,7 +480,7 @@ class StudentDetailView(APIView):
         """Update student"""
         try:
             student = Student.objects.get(id=student_id, school_id=school_id)
-            serializer = StudentSerializer(student, data=request.data)
+            serializer = StudentSerializer(student, data=request.data, partial=True)
             if serializer.is_valid():
                 serializer.save()
                 return Response(serializer.data)
@@ -974,7 +1006,7 @@ class InviteStaffView(APIView):
 
         # Build frontend link: FRONTEND_URL?code=<code>
         frontend_base = getattr(settings, 'FRONTEND_URL', '').rstrip('/')
-        invite_link = f"{frontend_base}?code={invite.code}"
+        invite_link = f"{frontend_base}/invite/accept/?code={invite.code}"
 
         # Render email templates
         context = {
@@ -1015,6 +1047,7 @@ class AcceptInvitationView(APIView):
     `school_id` and `role` (second modal). The server validates the
     invitation and creates the account, linking it to the school.
     """
+    permission_classes = [AllowAny]
 
     def post(self, request):
         # Accept code from body or query params (frontend may send code in URL)
