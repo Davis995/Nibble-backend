@@ -169,7 +169,7 @@ class AIProviderRouter:
                 {"role": "user", "content": user_prompt}
             ],
             temperature=kwargs.get('temperature', 0.5),
-            max_tokens=kwargs.get('max_tokens', 400)
+            max_tokens=kwargs.get('max_tokens', 4096)
         )
         
         return {
@@ -196,7 +196,7 @@ class AIProviderRouter:
                 {"role": "user", "content": user_prompt}
             ],
             temperature=kwargs.get('temperature', 0.5),
-            max_tokens=kwargs.get('max_tokens', 400)
+            max_tokens=kwargs.get('max_tokens', 4096)
         )
         
         return {

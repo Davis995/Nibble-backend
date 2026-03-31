@@ -27,6 +27,7 @@ class Plan(models.Model):
     description = models.TextField(blank=True, help_text="Plan description for marketing")
     use_type = models.CharField(max_length=20, choices=USE_TYPE_CHOICES)
     theme = models.CharField(max_length=20, choices=THEME_CHOICES, default='cream')
+    currency = models.CharField(max_length=10, default='UGX', help_text="Currency for this plan, e.g. 'UGX', 'KES', 'USD'")
     allowed_modals = models.JSONField(default=list, blank=True, help_text="List of allowed AI modals for this plan, e.g. ['gpt-4', 'gpt-3.5', 'deepseek-chat']")
     
     # Pricing
@@ -186,6 +187,7 @@ class User(AbstractUser):
     
     # Account status
     is_verified = models.BooleanField(default=False)
+    is_onboarded = models.BooleanField(default=False, help_text="Whether the user has completed onboarding")
     trial = models.BooleanField(default=False)
     start_trial = models.DateField(blank=True, null=True)
     end_trial = models.DateField(blank=True, null=True)
@@ -431,3 +433,26 @@ class Invitation(models.Model):
         if self.expires_at and timezone.now() > self.expires_at:
             return False
         return True
+
+
+class PasswordResetCode(models.Model):
+    """
+    6-digit code for password reset functionality
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='password_reset_codes')
+    code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'password_reset_codes'
+        verbose_name = 'Password Reset Code'
+        verbose_name_plural = 'Password Reset Codes'
+
+    def __str__(self):
+        return f"Reset code for {self.user.username}"
+
+    def is_valid(self):
+        """Check if code is still valid"""
+        return not self.used and timezone.now() < self.expires_at

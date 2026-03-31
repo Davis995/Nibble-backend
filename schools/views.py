@@ -1,14 +1,14 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, serializers
 import pandas as pd
 import random
 import string
 
 from .models import School, Student
-from .serializers import SchoolSerializer, StudentSerializer
+from .serializers import SchoolSerializer, StudentSerializer, StaffCRUDSerializer, ActivitySerializer
 from .permissions import IsSchoolAdminOrOperator, IsOwnerLevel, IsSchoolStaffOrAdmin
-from .models import Invitation, Staff
+from .models import Invitation, Staff, Activity, UsageLog
 from .serializers import InvitationSerializer, AcceptInvitationSerializer
 from django.utils import timezone
 from django.contrib.auth import get_user_model
@@ -737,6 +737,203 @@ class StudentBulkToggleActiveView(APIView):
 
 # ============================================================================
 # SCHOOL ADMIN USER CRUD VIEWS
+# ============================================================================
+
+class StaffListCreateView(APIView):
+    """
+    GET: List staff for a school
+    POST: Create new staff
+    """
+    permission_classes = [IsSchoolStaffOrAdmin]
+
+    def get(self, request, school_id):
+        try:
+            school = School.objects.get(id=school_id)
+            qs = Staff.objects.filter(school=school)
+
+            search = request.query_params.get('search')
+            if search:
+                qs = qs.filter(
+                    Q(first_name__icontains=search) | 
+                    Q(last_name__icontains=search) | 
+                    Q(school_email__icontains=search)
+                )
+
+            qs = qs.order_by('last_name', 'first_name')
+
+            page = int(request.query_params.get('page', 0))
+            limit = int(request.query_params.get('limit', 5))
+            
+            total = qs.count()
+            start = page * limit
+            staff = qs[start:start+limit]
+
+            serializer = StaffCRUDSerializer(staff, many=True)
+            
+            return Response({
+                'success': True,
+                'data': {
+                    'staff': serializer.data,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'totalPages': (total + limit - 1) // limit if limit else 0
+                    }
+                }
+            })
+        except School.DoesNotExist:
+            return Response({'error': 'School not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    def post(self, request, school_id):
+        try:
+            school = School.objects.get(id=school_id)
+        except School.DoesNotExist:
+            return Response({'error': 'School not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = StaffCRUDSerializer(
+            data=request.data,
+            context={'school': school}
+        )
+        if serializer.is_valid():
+            try:
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            except serializers.ValidationError as e:
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class StaffDetailView(APIView):
+    """
+    GET: Get staff details
+    PUT: Update staff
+    DELETE: Delete staff
+    """
+    permission_classes = [IsSchoolStaffOrAdmin]
+
+    def get(self, request, school_id, staff_id):
+        try:
+            staff = Staff.objects.get(id=staff_id, school_id=school_id)
+            serializer = StaffCRUDSerializer(staff)
+            return Response(serializer.data)
+        except Staff.DoesNotExist:
+            return Response({'error': 'Staff not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    def put(self, request, school_id, staff_id):
+        try:
+            staff = Staff.objects.get(id=staff_id, school_id=school_id)
+            serializer = StaffCRUDSerializer(staff, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Staff.DoesNotExist:
+            return Response({'error': 'Staff not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    def delete(self, request, school_id, staff_id):
+        try:
+            staff = Staff.objects.get(id=staff_id, school_id=school_id)
+            staff.delete()
+            return Response({'message': 'Staff deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+        except Staff.DoesNotExist:
+            return Response({'error': 'Staff not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+# ============================================================================
+# ACTIVITY ENDPOINTS
+# ============================================================================
+
+class ActivityListCreateView(APIView):
+    """List and create activities"""
+    permission_classes = [IsSchoolStaffOrAdmin]
+
+    def get(self, request, school_id):
+        try:
+            school = School.objects.get(id=school_id)
+            qs = Activity.objects.filter(school=school)
+
+            search = request.query_params.get('search')
+            if search:
+                qs = qs.filter(
+                    Q(user_name__icontains=search) | 
+                    Q(action__icontains=search) | 
+                    Q(tool__icontains=search)
+                )
+
+            # Keep ordering from model
+            page = int(request.query_params.get('page', 0))
+            limit = int(request.query_params.get('limit', 5))  # PAGE_SIZE = 5 default
+            
+            total = qs.count()
+            start = page * limit
+            activities = qs[start:start+limit]
+
+            serializer = ActivitySerializer(activities, many=True)
+            
+            return Response({
+                'success': True,
+                'data': {
+                    'activities': serializer.data,
+                    'pagination': {
+                        'page': page,
+                        'limit': limit,
+                        'total': total,
+                        'totalPages': (total + limit - 1) // limit if limit else 0
+                    }
+                }
+            })
+        except School.DoesNotExist:
+            return Response({'error': 'School not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    def post(self, request, school_id):
+        try:
+            school = School.objects.get(id=school_id)
+        except School.DoesNotExist:
+            return Response({'error': 'School not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = ActivitySerializer(
+            data=request.data,
+            context={'school': school}
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ActivityDetailView(APIView):
+    """Update and delete activities"""
+    permission_classes = [IsSchoolStaffOrAdmin]
+
+    def get(self, request, school_id, activity_id):
+        try:
+            activity = Activity.objects.get(id=activity_id, school_id=school_id)
+            serializer = ActivitySerializer(activity)
+            return Response(serializer.data)
+        except Activity.DoesNotExist:
+            return Response({'error': 'Activity not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    def put(self, request, school_id, activity_id):
+        try:
+            activity = Activity.objects.get(id=activity_id, school_id=school_id)
+            serializer = ActivitySerializer(activity, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Activity.DoesNotExist:
+            return Response({'error': 'Activity not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    def delete(self, request, school_id, activity_id):
+        try:
+            activity = Activity.objects.get(id=activity_id, school_id=school_id)
+            activity.delete()
+            return Response({'message': 'Activity deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+        except Activity.DoesNotExist:
+            return Response({'error': 'Activity not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
 # ============================================================================
 
 class SchoolAdminUserListCreateView(APIView):
@@ -1478,3 +1675,630 @@ class SchoolAdminDashboardView(APIView):
     # The helper methods above are also used by the AdminDashboardView; the
     # duplicates that were previously placed after SchoolAdminDashboardView
     # have been removed to avoid method shadowing and AttributeError.
+
+class SchoolMonitoringView(APIView):
+    """
+    GET: Get detailed monitoring and alerts for a specific school (Superusers/Operators only)
+    """
+    permission_classes = [IsOwnerLevel]
+
+    def get(self, request, school_id):
+        try:
+            school = School.objects.get(id=school_id)
+        except School.DoesNotExist:
+            return Response({'error': 'School not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # 1. Subscription & Billing
+        billing = {
+            'status': 'no_subscription',
+            'plan': None,
+            'start_credits': 0,
+            'remaining_credits': 0,
+            'billing_start_date': None,
+            'billing_end_date': None,
+            'monthly_price': 0,
+            'percentage_used': 0,
+        }
+        
+        subscription = Subscription.objects.filter(organisation=school, status='active').first()
+        if subscription:
+            billing['status'] = subscription.status
+            billing['plan'] = subscription.plan.name if subscription.plan else None
+            billing['start_credits'] = subscription.start_credits
+            billing['remaining_credits'] = subscription.remaining_credits
+            billing['billing_start_date'] = subscription.billing_start_date.isoformat() if subscription.billing_start_date else None
+            billing['billing_end_date'] = subscription.billing_end_date.isoformat() if subscription.billing_end_date else None
+            if subscription.plan:
+                billing['monthly_price'] = float(subscription.plan.monthly_price)
+            if subscription.start_credits > 0:
+                used = subscription.start_credits - subscription.remaining_credits
+                billing['percentage_used'] = round((used / subscription.start_credits) * 100, 2)
+
+        # 2. Usage & AI Monitoring (Last 30 days)
+        end_date = timezone.now().date()
+        start_date = end_date - timedelta(days=30)
+        
+        usage_data = AILog.objects.filter(
+            user__organisation=school,
+            created_at__date__gte=start_date
+        ).annotate(
+            day=TruncDay('created_at')
+        ).values('day').annotate(
+            total_requests=Count('id'),
+            total_tokens=Sum('total_tokens')
+        ).order_by('day')
+        
+        usage_over_time = []
+        for d in usage_data:
+            usage_over_time.append({
+                'date': d['day'].date().isoformat() if hasattr(d['day'], 'date') else d['day'].isoformat(),
+                'requests': d['total_requests'],
+                'tokens': d['total_tokens']
+            })
+
+        # 3. Alerts & Risk Monitoring
+        alerts = []
+        
+        # Alert 1: Student limit exceeded
+        active_students = school.students.filter(is_active=True).count()
+        if active_students > school.max_students:
+            alerts.append({
+                'type': 'student_limit_exceeded',
+                'severity': 'high',
+                'message': f'School has {active_students} active students, exceeding limit of {school.max_students}.'
+            })
+            
+        # Alert 2: Subscription expired
+        expired_sub = Subscription.objects.filter(organisation=school, status='expired').first()
+        if expired_sub and not subscription:
+            alerts.append({
+                'type': 'subscription_expired',
+                'severity': 'high',
+                'message': f'The subscription for plan {expired_sub.plan.name if expired_sub.plan else "Unknown"} has expired.'
+            })
+            
+        # Alert 3: Unusual usage spike
+        today_usage = sum([u['tokens'] for u in usage_over_time if u['date'] == end_date.isoformat()])
+        week_ago = end_date - timedelta(days=7)
+        past_week_usage = [u['tokens'] for u in usage_over_time if u['date'] >= week_ago.isoformat() and u['date'] < end_date.isoformat()]
+        
+        avg_week_usage = sum(past_week_usage) / len(past_week_usage) if past_week_usage else 0
+        
+        if today_usage > 1000 and today_usage > (avg_week_usage * 2):
+            alerts.append({
+                'type': 'unusual_usage_spike',
+                'severity': 'medium',
+                'message': f'Unusual usage detected: {today_usage} tokens today (average is {int(avg_week_usage)}/day).'
+            })
+
+        return Response({
+            'success': True,
+            'data': {
+                'school': {
+                    'id': str(school.id),
+                    'name': school.name,
+                    'is_active': school.is_active,
+                    'active_students': active_students,
+                    'max_students': school.max_students
+                },
+                'billing': billing,
+                'monitoring': {
+                    'usage_last_30_days': usage_over_time
+                },
+                'alerts': alerts
+            }
+        })
+
+
+class GlobalAlertsView(APIView):
+    """
+    GET: Get all active alerts across all schools (Superusers/Operators only)
+    """
+    permission_classes = [IsOwnerLevel]
+
+    def get(self, request):
+        active_schools = School.objects.filter(is_active=True)
+        end_date = timezone.now().date()
+        start_date = end_date - timedelta(days=7)
+        
+        all_alerts = []
+        
+        for school in active_schools:
+            school_alerts = []
+            
+            # 1. Student Limit
+            active_students = school.students.filter(is_active=True).count()
+            if active_students > school.max_students:
+                school_alerts.append({
+                    'type': 'student_limit_exceeded',
+                    'severity': 'high',
+                    'message': f'School has {active_students} active students, exceeding limit of {school.max_students}.'
+                })
+                
+            # 2. Subscription
+            active_sub = Subscription.objects.filter(organisation=school, status='active').exists()
+            if not active_sub:
+                expired_sub = Subscription.objects.filter(organisation=school, status='expired').exists()
+                if expired_sub:
+                    school_alerts.append({
+                        'type': 'subscription_expired',
+                        'severity': 'high',
+                        'message': 'The subscription has expired.'
+                    })
+                    
+            # 3. Usage Spike
+            usage_data = AILog.objects.filter(
+                user__organisation=school,
+                created_at__date__gte=start_date
+            ).annotate(
+                day=TruncDay('created_at')
+            ).values('day').annotate(
+                total_tokens=Sum('total_tokens')
+            )
+            
+            usage_by_day = {d['day'].date().isoformat() if hasattr(d['day'], 'date') else d['day'].isoformat(): d['total_tokens'] for d in usage_data}
+            today_str = end_date.isoformat()
+            today_tokens = usage_by_day.get(today_str, 0)
+            
+            past_week_tokens = [tokens for day_str, tokens in usage_by_day.items() if day_str != today_str]
+            avg_week_tokens = sum(past_week_tokens) / len(past_week_tokens) if past_week_tokens else 0
+            
+            if today_tokens > 1000 and today_tokens > (avg_week_tokens * 2):
+                school_alerts.append({
+                    'type': 'unusual_usage_spike',
+                    'severity': 'medium',
+                    'message': f'Unusual usage detected: {today_tokens} tokens today (average is {int(avg_week_tokens)}/day).'
+                })
+                
+            if school_alerts:
+                all_alerts.append({
+                    'school_id': str(school.id),
+                    'school_name': school.name,
+                    'alerts': school_alerts
+                })
+
+        return Response({
+            'success': True,
+            'data': all_alerts,
+            'summary': {
+                'total_schools_with_alerts': len(all_alerts),
+                'total_alerts': sum(len(sa['alerts']) for sa in all_alerts)
+            }
+        })
+
+class SchoolNotificationsView(APIView):
+    """
+    GET: Get alerts/notifications for a specific school (SchoolAdmin / Operators)
+    """
+    permission_classes = [IsSchoolAdminOrOperator]
+
+    def get(self, request, school_id=None):
+        # Resolve school
+        user = request.user
+        school = None
+        if getattr(user, 'is_authenticated', False) and getattr(user, 'role', None) == 'school_admin':
+            school = getattr(user, 'managed_school', None)
+        elif school_id:
+            try:
+                school = School.objects.get(id=school_id)
+            except School.DoesNotExist:
+                return Response({'error': 'School not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not school:
+            return Response({'error': 'No school linked'}, status=status.HTTP_404_NOT_FOUND)
+
+        alerts = []
+        
+        # 1. Student Limit
+        active_students = school.students.filter(is_active=True).count()
+        if active_students > school.max_students:
+            alerts.append({
+                'id': 'alert-student-limit',
+                'title': 'Student Limit Exceeded',
+                'description': f'You have {active_students} active students, exceeding your plan limit of {school.max_students}.',
+                'time': timezone.now().isoformat(),
+                'type': 'warning',
+                'icon': 'ShieldAlert',
+                'isRead': False
+            })
+
+        # 2. Subscription Expiry / Renewals
+        subscription = Subscription.objects.filter(organisation=school, status='active').first()
+        if not subscription:
+            alerts.append({
+                'id': 'alert-sub-expired',
+                'title': 'Subscription Inactive or Expired',
+                'description': 'Your school currently has no active subscription. Please top up or upgrade your plan.',
+                'time': timezone.now().isoformat(),
+                'type': 'critical',
+                'icon': 'CreditCard',
+                'isRead': False
+            })
+        elif subscription.billing_end_date:
+            days_left = (subscription.billing_end_date - timezone.now().date()).days
+            if days_left <= 7 and days_left > 0:
+                alerts.append({
+                    'id': 'alert-sub-expiring',
+                    'title': 'Subscription Ending Soon',
+                    'description': f'Your subscription expires in {days_left} days. Please renew to avoid interruption.',
+                    'time': timezone.now().isoformat(),
+                    'type': 'warning',
+                    'icon': 'Clock',
+                    'isRead': False
+                })
+
+        # 3. Credits nearly exhausted
+        if subscription and subscription.start_credits > 0:
+            if subscription.remaining_credits < (0.1 * subscription.start_credits):
+                alerts.append({
+                    'id': 'alert-credits-low',
+                    'title': 'Low AI Credits',
+                    'description': f'You have used over 90% of your AI credits ({subscription.remaining_credits} credits remaining).',
+                    'time': timezone.now().isoformat(),
+                    'type': 'warning',
+                    'icon': 'Zap',
+                    'isRead': False
+                })
+
+        return Response({
+            'success': True,
+            'data': alerts
+        })
+
+
+class SchoolBillingView(APIView):
+    """
+    GET: Get billing status, limits, and credit history (mock invoices) for a school
+    """
+    permission_classes = [IsSchoolAdminOrOperator]
+
+    def get(self, request, school_id=None):
+        user = request.user
+        school = None
+        if getattr(user, 'is_authenticated', False) and getattr(user, 'role', None) == 'school_admin':
+            school = getattr(user, 'managed_school', None)
+        elif school_id:
+            try:
+                school = School.objects.get(id=school_id)
+            except School.DoesNotExist:
+                return Response({'error': 'School not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not school:
+            return Response({'error': 'No school linked'}, status=status.HTTP_404_NOT_FOUND)
+
+        subscription = Subscription.objects.filter(organisation=school, status='active').first()
+        
+        billing_data = {
+            'status': 'no_subscription',
+            'plan': 'None',
+            'start_credits': 0,
+            'remaining_credits': 0,
+            'percentage_used': 0,
+            'billing_end_date': None,
+            'max_users': 0,
+            'active_students': school.students.filter(is_active=True).count(),
+            'active_teachers': Staff.objects.filter(school=school).count()
+        }
+
+        if subscription:
+            billing_data['status'] = subscription.status
+            billing_data['plan'] = subscription.plan.name if subscription.plan else 'Custom Plan'
+            billing_data['start_credits'] = subscription.start_credits
+            billing_data['remaining_credits'] = subscription.remaining_credits
+            billing_data['max_users'] = subscription.max_users
+            if subscription.billing_end_date:
+                billing_data['billing_end_date'] = subscription.billing_end_date.isoformat()
+            
+            if subscription.start_credits > 0:
+                used = subscription.start_credits - subscription.remaining_credits
+                billing_data['percentage_used'] = round((used / subscription.start_credits) * 100, 2)
+
+        # Invoices (Fetch from CreditTop history to mock invoice creation)
+        tops = CreditTop.objects.filter(organisation=school).order_by('-purchase_date')
+        invoices = []
+        for i, top in enumerate(tops):
+            invoices.append({
+                'id': f'INV-{str(top.id).zfill(4)}',
+                'date': top.purchase_date.strftime('%b %d, %Y'),
+                'amount': f'${float(top.amount):.2f}',
+                'status': 'Paid'
+            })
+
+        return Response({
+            'success': True,
+            'billing': billing_data,
+            'invoices': invoices
+        })
+
+
+class SchoolBillingTopUpView(APIView):
+    """
+    POST: Top up credits for a school
+    """
+    permission_classes = [IsSchoolAdminOrOperator]
+
+    def post(self, request, school_id=None):
+        from django.db import transaction
+        user = request.user
+        school = None
+        if getattr(user, 'is_authenticated', False) and getattr(user, 'role', None) == 'school_admin':
+            school = getattr(user, 'managed_school', None)
+        elif school_id:
+            try:
+                school = School.objects.get(id=school_id)
+            except School.DoesNotExist:
+                return Response({'error': 'School not found'}, status=status.HTTP_404_NOT_FOUND)
+                
+        if not school:
+            return Response({'error': 'No school linked'}, status=status.HTTP_404_NOT_FOUND)
+
+        percentage = request.data.get('percentage')
+        if not percentage:
+            return Response({'error': 'percentage is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            percentage = float(percentage)
+        except ValueError:
+            return Response({'error': 'Invalid percentage'}, status=status.HTTP_400_BAD_REQUEST)
+
+        subscription = Subscription.objects.filter(organisation=school, status='active').first()
+        if not subscription:
+            return Response({'error': 'No active subscription to top up'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not subscription.start_credits:
+            start_credits = 100000  # fallback initial assumption if somehow 0
+        else:
+            start_credits = subscription.start_credits
+
+        amount_to_add = int(start_credits * (percentage / 100.0))
+        
+        # Estimate cost ($49 for 10%, etc)
+        cost_map = {10: 49.00, 25: 99.00, 50: 179.00, 100: 299.00}
+        cost = cost_map.get(int(percentage), (percentage / 10) * 49.00)
+
+        # MOCK A PAYMENT BY CREATING A CREDIT TOP AND ADDING CREDITS
+        with transaction.atomic():
+            CreditTop.objects.create(
+                organisation=school,
+                transaction_id=f"pi_mock_{timezone.now().timestamp()}",
+                user=user,
+                credit_add=amount_to_add,
+                amount=cost,
+                purchase_date=timezone.now().date(),
+                payment_status='completed'
+            )
+            
+            # Update Subscription
+            subscription.remaining_credits += amount_to_add
+            subscription.start_credits += amount_to_add  # Adjust maximum pool
+            subscription.save(update_fields=['remaining_credits', 'start_credits'])
+
+        return Response({
+            'success': True,
+            'message': f'Successfully added {percentage}% credits to subscription.',
+            'added_credits': amount_to_add,
+            'new_balance': subscription.remaining_credits
+        })
+
+class SchoolResetDataView(APIView):
+    """
+    POST: Reset a school's instance data (Students, Staff, AI Logs, Credit History, Activity)
+    """
+    permission_classes = [IsSchoolAdminOrOperator]
+
+    def post(self, request, school_id=None):
+        from django.db import transaction
+        user = request.user
+        school = None
+        if getattr(user, 'is_authenticated', False) and getattr(user, 'role', None) == 'school_admin':
+            school = getattr(user, 'managed_school', None)
+        elif school_id:
+            try:
+                school = School.objects.get(id=school_id)
+            except School.DoesNotExist:
+                return Response({'error': 'School not found'}, status=status.HTTP_404_NOT_FOUND)
+                
+        if not school:
+            return Response({'error': 'No school linked'}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            with transaction.atomic():
+                # Delete Students
+                Student.objects.filter(school=school).delete()
+                # Delete Staff (Except current school_admin user if linked)
+                Staff.objects.filter(school=school).exclude(school_email=user.email).delete()
+                # Delete AILogs for users in this school
+                AILog.objects.filter(user__organisation=school).delete()
+                # Delete Credit History
+                CreditTop.objects.filter(organisation=school).delete()
+                # Delete Activity Feed
+                Activity.objects.filter(school=school).delete()
+                # Delete Usage Logs
+                UsageLog.objects.filter(school=school).delete()
+                # Delete Subscriptions (maybe clear them and we'll need a new one upon rebranding/onboarding?)
+                # For safety, let's keep the core subscription but reset its credits to 0 or its plan's defaults?
+                # Actually let's just mark the school as needing orientation again so they can pick a plan/start over
+                school.org_orientation = False
+                school.save(update_fields=['org_orientation'])
+
+            return Response({
+                'success': True,
+                'message': 'School instance data has been successfully cleaned and reset.'
+            })
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class SchoolOrientationOnboardView(APIView):
+    """
+    POST: Finalize onboarding orientation, select trial plan, and generate demo data.
+    """
+    permission_classes = [IsSchoolAdminOrOperator]
+
+    def post(self, request, school_id=None):
+        from django.db import transaction
+        import random as py_random
+        from datetime import date, timedelta
+        from authentication.models import User as AuthUser # To properly create mock teachers
+        
+        user = request.user
+        school = None
+        if getattr(user, 'is_authenticated', False) and getattr(user, 'role', None) == 'school_admin':
+            school = getattr(user, 'managed_school', None)
+        elif school_id:
+            try:
+                school = School.objects.get(id=school_id)
+            except School.DoesNotExist:
+                return Response({'error': 'School not found'}, status=status.HTTP_404_NOT_FOUND)
+                
+        if not school:
+            return Response({'error': 'No school linked'}, status=status.HTTP_404_NOT_FOUND)
+
+        if school.org_orientation:
+            return Response({'error': 'School has already completed orientation setup.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        phone_number = request.data.get('phone_number')
+        selected_plan_name = 'Demo Platform' # Force a unified Demo plan for onboarding
+        
+        # 1. Update School Info
+        if phone_number:
+            school.contact_phone = phone_number
+            # Wait to save org_orientation until the end of transaction
+
+        # 2. Get/Create selected Plan and Subscription
+        plan = Plan.objects.filter(name__iexact=selected_plan_name).first()
+        if not plan:
+            # Create a default Demo mock plan
+            plan, _ = Plan.objects.get_or_create(
+                name=selected_plan_name,
+                defaults={
+                    'use_type': 'enterprise',
+                    'total_credits': 1000000, # 1M tokens for demo
+                    'max_users': 5000,
+                    'monthly_price': 0.00
+                }
+            )
+
+        with transaction.atomic():
+            # Create the orientation subscription (Free Trial for 30 days)
+            Subscription.objects.filter(organisation=school, status='active').update(status='expired')
+            subscription = Subscription.objects.create(
+                organisation=school,
+                plan=plan,
+                status='active',
+                max_users=plan.max_users or 500,
+                start_credits=plan.total_credits,
+                remaining_credits=plan.total_credits,
+                billing_start_date=timezone.now().date(),
+                billing_end_date=timezone.now().date() + timedelta(days=30)
+            )
+
+            # 3. GENERATE DEMO DATA (The "Sample" System)
+            
+            # --- Students ---
+            first_names = ["Sarah", "Mark", "David", "Jessica", "James", "Emily", "Michael", "Sophie", "Robert", "Linda"]
+            last_names = ["Johnson", "Davis", "Wilson", "Taylor", "Miller", "Brown", "Jones", "Moore", "White", "Harris"]
+            
+            students = []
+            for i in range(12):
+                fname = py_random.choice(first_names)
+                lname = py_random.choice(last_names)
+                s = Student.objects.create(
+                    school=school,
+                    first_name=fname,
+                    last_name=lname,
+                    school_email=f"student_{i+1}@demo.com",
+                    student_code=f"STU{str(i+1).zfill(3)}",
+                    is_active=True
+                )
+                students.append(s)
+
+            # --- Teachers (Staff) ---
+            teachers = []
+            subjects = ["Mathematics", "Physics", "English", "History", "Biology"]
+            for i, sub in enumerate(subjects):
+                fname = py_random.choice(first_names)
+                lname = py_random.choice(last_names)
+                email = f"teacher_{i+1}@demo.com"
+                
+                # Create a User for the Teacher
+                u, created = AuthUser.objects.get_or_create(
+                    email=email,
+                    defaults={
+                        'username': email,
+                        'first_name': fname,
+                        'last_name': lname,
+                        'role': 'teacher',
+                        'organisation': school,
+                        'is_active': True
+                    }
+                )
+                if created: u.set_password('demo123')
+                u.save()
+
+                # Create Staff record
+                st = Staff.objects.create(
+                    school=school,
+                    first_name=fname,
+                    last_name=lname,
+                    school_email=email,
+                    role='teacher',
+                    subject=sub,
+                    is_active=py_random.choice([True, True, True, False]) # Most active
+                )
+                teachers.append(u)
+
+            # --- AI Activity & Logs ---
+            import datetime
+            tools = ["Lesson Plan Generator", "Quiz Creator", "Email Draft", "Report Card Helper"]
+            all_users_for_logs = teachers + [user] # Include the admin too
+            
+            for i in range(25):
+                t_user = py_random.choice(all_users_for_logs)
+                t_tool = py_random.choice(tools)
+                t_date = timezone.now() - timedelta(days=py_random.randint(0, 30))
+                
+                # AILog
+                AILog.objects.create(
+                    user=t_user,
+                    tool=t_tool,
+                    title=f"Sample {t_tool} Task",
+                    topic=py_random.choice(["Algebra Basics", "Quantum Physics", "Modern History", "Plant Biology"]),
+                    prompt="Generate sample content for orientation placeholder.",
+                    response="This is a generated response placeholder for the dashboard visualization.",
+                    total_tokens=py_random.randint(500, 3000),
+                    credits=py_random.randint(50, 200),
+                    created_at=t_date
+                )
+                
+                # Activity record (School specific feed)
+                Activity.objects.create(
+                    school=school,
+                    user_name=t_user.get_full_name(),
+                    role="Teacher" if t_user in teachers else "Admin",
+                    action=f"generated a {t_tool}",
+                    tool=t_tool,
+                    time="Recently",
+                    date=t_date.date(),
+                    created_at=t_date
+                )
+
+            # --- Credit History (For invoices) ---
+            for i in range(2):
+                CreditTop.objects.create(
+                    subscription=subscription,
+                    organisation=school,
+                    credit_add=py_random.randint(10000, 50000),
+                    purchase_date=timezone.now().date() - timedelta(days=py_random.randint(10, 45)),
+                    expiry_date=timezone.now().date() + timedelta(days=365)
+                )
+
+            # Mark orientation as complete only after all demo data has been safely seeded
+            school.org_orientation = True
+            school.save(update_fields=['org_orientation', 'contact_phone'])
+
+        return Response({
+            'success': True,
+            'message': 'Welcome orientation finished! Your dashboard is now populated with sample demo data and a 30-day Free Trial.',
+            'org_orientation': True
+        })

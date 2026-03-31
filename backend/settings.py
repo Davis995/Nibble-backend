@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'rest_framework_simplejwt',
+    'django_filters',
     # Your apps
     'schools',
     'tools',  # Replace with your app name
@@ -57,11 +58,14 @@ MIDDLEWARE = [
 ]
 # allow a specific frontend domain
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # React
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://localhost:3000"
-    
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://172.16.54.252:3000",
+    "http://172.16.49.1:3000"
 ]
+
 CORS_ALLOW_CREDENTIALS = True
 # OR allow all domains (not recommended for production)
 # CORS_ALLOW_ALL_ORIGINS = True
@@ -211,7 +215,10 @@ SIMPLE_JWT = {
 OPENAI_API_KEY = config("OPENAI_API_KEY", default='')
 OPENAI_MODEL = config('OPENAI_MODEL', default="gpt-4o-mini")
 OPENAI_TEMPERATURE = config('OPENAI_TEMPERATURE', default=0.5, cast=float)
-OPENAI_MAX_TOKENS = config('OPENAI_MAX_TOKENS', default=500, cast=int)
+OPENAI_MAX_TOKENS = config('OPENAI_MAX_TOKENS', default=4096, cast=int)
+
+# DeepSeek Configuration
+DEEPSEEK_API_KEY = config("DEEPSEEK_API_KEY", default='')
 
 # Token Pricing (per 1M tokens)
 INPUT_TOKEN_PRICE = config('INPUT_TOKEN_PRICE', default=0.15, cast=float)

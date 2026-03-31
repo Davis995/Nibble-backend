@@ -28,6 +28,7 @@ urlpatterns = [
     path('notifications/', views.NotificationListView.as_view(), name='notification-list'),
     path('notifications/unread/', views.UnreadNotificationsView.as_view(), name='unread-notifications'),
     path('notifications/<int:notification_id>/read/', views.NotificationMarkReadView.as_view(), name='notification-mark-read'),
+    path('notifications/read-all/', views.NotificationMarkAllReadView.as_view(), name='notification-mark-all-read'),
     
     # Onboarding CRUD
     path('onboardings/', views.OnboardingListView.as_view(), name='onboarding-list'),

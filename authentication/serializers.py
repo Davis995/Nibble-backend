@@ -372,11 +372,68 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
     """
     Serializer for updating user profile
     """
+    onboarding = serializers.BooleanField(source='is_onboarded', required=False)
+    
     class Meta:
         model = User
         fields = [
-            'first_name', 'last_name', 'phone_number', 'date_of_birth', 'bio', 'profile_picture'
+            'first_name', 'last_name', 'phone_number', 'date_of_birth', 'bio', 'profile_picture', 'onboarding'
         ]
+
+
+# ============================================================================
+# ADMIN PLAN AND PLAN FEATURE SERIALIZERS
+# ============================================================================
+
+class PlanFeatureAdminSerializer(serializers.ModelSerializer):
+    """
+    Detailed admin serializer for plan features
+    """
+    class Meta:
+        model = PlanFeature
+        fields = ['id', 'text', 'included', 'highlight', 'order']
+
+class PlanAdminSerializer(serializers.ModelSerializer):
+    """
+    Comprehensive admin serializer for plans
+    Handles all administrative fields and nested feature management
+    """
+    features = PlanFeatureAdminSerializer(many=True, required=False)
+
+    class Meta:
+        model = Plan
+        fields = [
+            'id', 'plan_id', 'name', 'description', 'use_type', 'theme', 
+            'currency', 'allowed_modals', 'total_credits', 'max_users', 
+            'monthly_price', 'annual_price', 'annual_billed', 'badge', 
+            'cta', 'is_popular', 'is_active', 'features', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        features_data = validated_data.pop('features', [])
+        plan = Plan.objects.create(**validated_data)
+        
+        for feature_data in features_data:
+            PlanFeature.objects.create(plan=plan, **feature_data)
+        
+        return plan
+
+    def update(self, instance, validated_data):
+        features_data = validated_data.pop('features', None)
+        
+        # Update main plan fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # If features provided, replace old ones (standard pattern for this UI)
+        if features_data is not None:
+            instance.features.all().delete()
+            for feature_data in features_data:
+                PlanFeature.objects.create(plan=instance, **feature_data)
+        
+        return instance
 
 
 # ============================================================================
@@ -472,6 +529,32 @@ class PlanCreateUpdateSerializer(serializers.ModelSerializer):
         
         return instance
 
+class PlanFeaturePublicSerializer(serializers.ModelSerializer):
+    """
+    Simple serializer for plan features (text, included, highlight)
+    """
+    class Meta:
+        model = PlanFeature
+        fields = ['text', 'included', 'highlight']
+
+class PlanPublicSerializer(serializers.ModelSerializer):
+    """
+    Public serializer for plans with camelCase fields as requested
+    """
+    id = serializers.CharField(source='plan_id')
+    monthlyPrice = serializers.FloatField(source='monthly_price')
+    annualPrice = serializers.FloatField(source='annual_price')
+    annualBilled = serializers.FloatField(source='annual_billed')
+    popular = serializers.BooleanField(source='is_popular')
+    features = PlanFeaturePublicSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Plan
+        fields = [
+            'id', 'name', 'description', 'currency', 'monthlyPrice', 'annualPrice', 
+            'annualBilled', 'badge', 'popular', 'theme', 'cta', 'features'
+        ]
+
 class CreditsUsageSerializer(serializers.Serializer):
     """
     Serializer for user credit usage information
@@ -486,3 +569,22 @@ class CreditsUsageSerializer(serializers.Serializer):
     
     class Meta:
         fields = ['subscription_id', 'plan_name', 'subscription_status', 'credits', 'billing', 'user']
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    """
+    Serializer for password reset request
+    """
+    email = serializers.EmailField(required=True)
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """
+    Serializer for password reset confirmation
+    """
+    token = serializers.CharField(required=True)
+    new_password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
+    new_password_confirm = serializers.CharField(write_only=True, required=True)
+
+    def validate(self, attrs):
+        if attrs.get('new_password') != attrs.get('new_password_confirm'):
+            raise serializers.ValidationError({"new_password": "Password fields didn't match."})
+        return attrs

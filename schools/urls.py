@@ -22,13 +22,24 @@ from .views import (
     # School Admin User CRUD
     SchoolAdminUserListCreateView,
     SchoolAdminUserDetailView,
+    StaffListCreateView,
+    StaffDetailView,
+    ActivityListCreateView,
+    ActivityDetailView,
     InviteStaffView,
     AcceptInvitationView,
 
     # Admin Dashboard
     AdminDashboardView,
     SchoolAdminDashboardView,
-    SchoolDetailsView
+    SchoolDetailsView,
+    SchoolMonitoringView,
+    GlobalAlertsView,
+    SchoolNotificationsView,
+    SchoolBillingView,
+    SchoolBillingTopUpView,
+    SchoolOrientationOnboardView,
+    SchoolResetDataView
 )
 
 app_name = 'schools'
@@ -79,6 +90,14 @@ urlpatterns = [
     # School Admin User Detail (Update/Delete)
     path('admin-users/<int:user_id>/', SchoolAdminUserDetailView.as_view(), name='school_admin_user_detail'),
 
+    # Staff CRUD endpoints
+    path('<uuid:school_id>/staff/', StaffListCreateView.as_view(), name='staff_list_create'),
+    path('<uuid:school_id>/staff/<uuid:staff_id>/', StaffDetailView.as_view(), name='staff_detail'),
+
+    # Activity CRUD endpoints
+    path('<uuid:school_id>/activities/', ActivityListCreateView.as_view(), name='activity_list_create'),
+    path('<uuid:school_id>/activities/<int:activity_id>/', ActivityDetailView.as_view(), name='activity_detail'),
+
     # Invite staff (creates an invitation code)
     path('<uuid:school_id>/staff/invite/', InviteStaffView.as_view(), name='invite_staff'),
 
@@ -93,4 +112,13 @@ urlpatterns = [
     path('dashboard/', SchoolAdminDashboardView.as_view(), name='school_admin_dashboard_me'),
     # Operators can fetch dashboard for any school by id
     path('<uuid:school_id>/dashboard/', SchoolAdminDashboardView.as_view(), name='school_admin_dashboard'),
+
+    # ==================== MONITORING & ALERTS ENDPOINTS ====================
+    path('alerts/', GlobalAlertsView.as_view(), name='global_alerts'),
+    path('<uuid:school_id>/monitoring/', SchoolMonitoringView.as_view(), name='school_monitoring'),
+    path('<uuid:school_id>/notifications/', SchoolNotificationsView.as_view(), name='school_notifications'),
+    path('<uuid:school_id>/billing/', SchoolBillingView.as_view(), name='school_billing'),
+    path('<uuid:school_id>/billing/topup/', SchoolBillingTopUpView.as_view(), name='school_billing_topup'),
+    path('<uuid:school_id>/onboard-orientation/', SchoolOrientationOnboardView.as_view(), name='school_onboard_orientation'),
+    path('<uuid:school_id>/reset-data/', SchoolResetDataView.as_view(), name='school_reset_data'),
 ]

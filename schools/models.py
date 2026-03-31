@@ -47,6 +47,7 @@ class School(models.Model):
 
     # Status
     is_active = models.BooleanField(default=True)
+    org_orientation = models.BooleanField(default=False)
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -150,6 +151,7 @@ class Staff(models.Model):
         ('school_admin', 'School Admin'),
     ]
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='teacher')
+    subject = models.CharField(max_length=150, blank=True, null=True)
 
 
     # Status
@@ -252,3 +254,29 @@ class Invitation(models.Model):
         if self.expires_at and timezone.now() > self.expires_at:
             return False
         return True
+
+
+class Activity(models.Model):
+    """
+    Log of system and user activities for a school
+    """
+    id = models.BigAutoField(primary_key=True)
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='activities')
+    
+    user_name = models.CharField(max_length=255)  # E.g. "Sarah Johnson"
+    role = models.CharField(max_length=50)        # E.g. "Teacher", "Student", "System"
+    action = models.CharField(max_length=500)     # E.g. "Generated a Lesson Plan"
+    tool = models.CharField(max_length=200)       # E.g. "Lesson Plan Generator"
+    time = models.CharField(max_length=100)       # E.g. "2 mins ago"
+    date = models.DateField(null=True, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'activities'
+        verbose_name = 'Activity'
+        verbose_name_plural = 'Activities'
+        ordering = ['-created_at', '-id']
+
+    def __str__(self):
+        return f"{self.user_name} ({self.role}) - {self.action}"

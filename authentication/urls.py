@@ -1,6 +1,11 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework.routers import DefaultRouter
 from .views import *
+
+router = DefaultRouter()
+router.register(r'admin/plans', AdminPlanViewSet, basename='admin-plans')
+router.register(r'admin/users', AdminUserViewSet, basename='admin-users')
 
 app_name = 'authentication'
 
@@ -31,6 +36,9 @@ urlpatterns = [
     # Get Credits Usage
     path('credits/usage/', CreditsUsageView.as_view(), name='credits-usage'),
 
+    # Get Sidebar Badges
+    path('sidebar-badges/', SidebarBadgesView.as_view(), name='sidebar-badges'),
+
     # ==================== USER PROFILE ENDPOINTS ====================
 
     # Get Profile
@@ -38,6 +46,9 @@ urlpatterns = [
 
     # Update Profile
     path('profile/update/', UserProfileUpdateView.as_view(), name='profile-update'),
+
+    # Update Onboarding & Modal Data
+    path('profile/onboarding/', UserOnboardingUpdateView.as_view(), name='profile-onboarding'),
 
     # Change Password
     path('password/change/', ChangePasswordView.as_view(), name='password-change'),
@@ -58,6 +69,17 @@ urlpatterns = [
     # Confirm Password Reset
     path('password/reset/confirm/', PasswordResetConfirmView.as_view(), name='password-reset-confirm'),
 
+    # ==================== ACCOUNT RESET ENDPOINTS (6-digit code) ====================
+
+    # Request Account Reset
+    path('account/reset/request/', AccountResetRequestView.as_view(), name='account-reset-request'),
+
+    # Verify Account Reset Code
+    path('account/reset/verify/', AccountResetVerifyView.as_view(), name='account-reset-verify'),
+
+    # Confirm Account Reset
+    path('account/reset/confirm/', AccountResetConfirmView.as_view(), name='account-reset-confirm'),
+
     # ==================== EMAIL VERIFICATION ENDPOINTS ====================
 
     # Verify Email
@@ -67,12 +89,7 @@ urlpatterns = [
     path('email/verify/resend/', ResendVerificationEmailView.as_view(), name='email-verify-resend'),
 
     # ==================== ADMIN USER MANAGEMENT ENDPOINTS ====================
-
-    # List All Users (Admin only)
-    path('admin/users/', UserListView.as_view(), name='admin-users-list'),
-
-    # User Detail (Admin only)
-    path('admin/users/<int:user_id>/', UserDetailView.as_view(), name='admin-user-detail'),
+    # Handled by router (admin/users/)
 
     # ==================== ROLE-SPECIFIC DASHBOARD ENDPOINTS ====================
 
@@ -100,3 +117,5 @@ urlpatterns = [
     path('invite/create/', InvitationCreateView.as_view(), name='invite-create'),
     path('invite/accept/', InvitationAcceptView.as_view(), name='invite-accept'),
 ]
+
+urlpatterns += router.urls

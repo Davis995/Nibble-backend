@@ -4,7 +4,7 @@ Django Admin configuration for SSO models
 
 from django.contrib import admin
 from schools.models import School, Student, UsageLog
-from .models import User, PasswordResetToken, EmailVerificationToken, Plan, PlanFeature, Subscription, CreditTop
+from .models import User, PasswordResetToken, EmailVerificationToken, Plan, PlanFeature, Subscription, CreditTop, PasswordResetCode
 
 
 # ============================================================================
@@ -139,6 +139,14 @@ class PasswordResetTokenAdmin(admin.ModelAdmin):
     list_filter = ('used', 'created_at')
     search_fields = ('user__username', 'user__email')
     readonly_fields = ('token', 'created_at')
+
+
+@admin.register(PasswordResetCode)
+class PasswordResetCodeAdmin(admin.ModelAdmin):
+    list_display = ('user', 'code', 'created_at', 'expires_at', 'used')
+    list_filter = ('used', 'created_at')
+    search_fields = ('user__username', 'user__email', 'code')
+    readonly_fields = ('created_at',)
 
 
 @admin.register(EmailVerificationToken)

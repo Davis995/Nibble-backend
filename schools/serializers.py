@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.conf import settings
 
-from .models import School, Student
+from .models import School, Student, Staff, Activity
 from authentication.models import Subscription
 
 User = get_user_model()
@@ -349,3 +349,97 @@ class OnboardingUpdateResponseSerializer(serializers.Serializer):
     id = serializers.CharField()
     onboardingProgress = serializers.IntegerField()
     completedSteps = OnboardingStepsSerializer()
+
+
+# ============================================================================
+# STAFF CRUD SERIALIZER
+# ============================================================================
+
+class StaffCRUDSerializer(serializers.ModelSerializer):
+    """
+    Serialize staff information matching frontend Teacher shape:
+    id, name, email, subject, status
+    """
+    name = serializers.CharField(required=False)
+    email = serializers.EmailField(source='school_email')
+    status = serializers.ChoiceField(choices=['Active', 'Inactive'], required=False)
+
+    class Meta:
+        model = Staff
+        fields = ['id', 'name', 'email', 'subject', 'status', 'role']
+        read_only_fields = ['id']
+
+    def to_representation(self, instance):
+        return {
+            'id': instance.id,
+            'name': f"{instance.first_name} {instance.last_name}".strip(),
+            'email': instance.school_email,
+            'subject': instance.subject,
+            'status': 'Active' if instance.is_active else 'Inactive',
+            'role': instance.role
+        }
+
+    def to_internal_value(self, data):
+        ret = {}
+        if 'name' in data:
+            parts = str(data['name']).split(' ', 1)
+            ret['first_name'] = parts[0]
+            ret['last_name'] = parts[1] if len(parts) > 1 else ''
+        if 'email' in data:
+            ret['school_email'] = data['email']
+        if 'subject' in data:
+            ret['subject'] = data['subject']
+        if 'status' in data:
+            ret['is_active'] = (str(data['status']).lower() == 'active')
+        if 'role' in data:
+            ret['role'] = data['role']
+        return ret
+
+    def create(self, validated_data):
+        from django.db import IntegrityError
+        
+        school_obj = self.context.get('school')
+        if not school_obj:
+            raise serializers.ValidationError({'school': 'School is required'})
+            
+        validated_data['school'] = school_obj
+        
+        if 'first_name' not in validated_data:
+            validated_data['first_name'] = 'Staff'
+        if 'last_name' not in validated_data:
+            validated_data['last_name'] = 'Member'
+
+        email = validated_data.get('school_email')
+        try:
+            staff, created = Staff.objects.update_or_create(
+                school=school_obj,
+                school_email=email,
+                defaults=validated_data
+            )
+            return staff
+        except IntegrityError:
+            raise serializers.ValidationError({'email': 'Staff with this email already exists in this school.'})
+
+
+# ============================================================================
+# ACTIVITY SERIALIZER
+# ============================================================================
+
+class ActivitySerializer(serializers.ModelSerializer):
+    """
+    Serialize activity information matching frontend shape:
+    id, user, role, action, tool, time, date
+    """
+    user = serializers.CharField(source='user_name')
+
+    class Meta:
+        model = Activity
+        fields = ['id', 'user', 'role', 'action', 'tool', 'time', 'date']
+        
+    def create(self, validated_data):
+        school_obj = self.context.get('school')
+        if not school_obj:
+            raise serializers.ValidationError({'school': 'School is required'})
+            
+        validated_data['school'] = school_obj
+        return super().create(validated_data)

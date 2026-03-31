@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
+User = get_user_model()
 from .models import AILog, AITool, UserAIUsage, ToolCategory, ToolInput, ToolFavorite
 from datetime import datetime, timedelta
 from django.db.models import Sum, Count
@@ -7,6 +8,8 @@ from decimal import Decimal
 
 
 class ToolCategorySerializer(serializers.ModelSerializer):
+    description = serializers.CharField(allow_blank=True, required=False)
+    
     class Meta:
         model = ToolCategory
         fields = ['id', 'name', 'description', 'icon', 'type', 'created_at', 'updated_at']
@@ -58,8 +61,8 @@ class ToolListSerializer(serializers.ModelSerializer):
         model = AITool
         fields = [
             'id', 'slug', 'name', 'student_friendly_name', 'description',
-            'category', 'icon', 'color', 'is_premium',
-            'is_recommended', 'is_active', 'is_favorited',
+            'category', 'icon', 'color', 'system_prompt', 'preferred_modal',
+            'is_premium', 'is_recommended', 'is_active', 'is_favorited',
             'favorites_count', 'created_at'
         ]
     
@@ -97,6 +100,9 @@ class AIRequestSerializer(serializers.Serializer):
     
     # Provider selection (optional, defaults to PREFERRED_AI_PROVIDER) - dynamically validated
     provider = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    
+    # Optional task/log title
+    title = serializers.CharField(max_length=255, required=False, allow_blank=True)
     
     # Legacy fields for backward compatibility
     topic = serializers.CharField(max_length=255, required=False, allow_blank=True)
@@ -174,9 +180,9 @@ class AILogSerializer(serializers.ModelSerializer):
     class Meta:
         model = AILog
         fields = [
-            'id', 'username', 'user', 'tool', 'topic', 'class_level',
+            'id', 'username', 'user', 'tool', 'title', 'topic', 'class_level',
             'difficulty', 'inputs', 'prompt_tokens', 'completion_tokens', 
-            'total_tokens', 'cost', 'cost_display', 'response',
+            'total_tokens', 'credits', 'cost', 'cost_display', 'response',
             'provider', 'created_at', 'response_time'
         ]
         read_only_fields = ['id', 'created_at', 'cost', 'provider']
@@ -185,16 +191,28 @@ class AILogSerializer(serializers.ModelSerializer):
         return f"${obj.cost:.6f}"
 
 
+class UserLogMemberSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'username']
+
 class AILogListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for listing AI logs with provider info"""
+    user = UserLogMemberSerializer(read_only=True)
     username = serializers.CharField(source='user.username', read_only=True)
+    response_time_ms = serializers.SerializerMethodField()
     
     class Meta:
         model = AILog
         fields = [
-            'id', 'username', 'tool', 'topic', 'total_tokens',
-            'cost', 'provider', 'created_at'
+            'id', 'user', 'username', 'tool', 'title', 'topic', 'total_tokens',
+            'credits', 'cost', 'provider', 'created_at', 'response_time_ms'
         ]
+
+    def get_response_time_ms(self, obj):
+        if obj.response_time:
+            return round(obj.response_time * 1000)
+        return None
 
 
 class AIToolOldSerializer(serializers.ModelSerializer):
@@ -214,7 +232,7 @@ class UserAIUsageSerializer(serializers.ModelSerializer):
         model = UserAIUsage
         fields = [
             'username', 'email', 'total_requests', 'total_tokens',
-            'total_cost', 'cost_display', 'last_request_at'
+            'total_credits', 'total_cost', 'cost_display', 'last_request_at'
         ]
     
     def get_cost_display(self, obj):
@@ -299,3 +317,20 @@ class ChatSessionSerializer(serializers.ModelSerializer):
         fields = ['id', 'session_id', 'user', 'title', 'created_at', 'updated_at', 'messages']
         read_only_fields = ['id', 'session_id', 'created_at', 'updated_at', 'messages']
 
+class ToolInputCreateUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ToolInput
+        fields = [
+            'id', 'tool', 'type', 'label', 'placeholder', 'default_value',
+            'options', 'required', 'minlength', 'maxlength', 'order'
+        ]
+
+
+class ToolCreateUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AITool
+        fields = [
+            'id', 'slug', 'name', 'student_friendly_name', 'description',
+            'categories', 'icon', 'color', 'system_prompt',
+            'is_premium', 'is_recommended', 'is_active', 'preferred_modal'
+        ]

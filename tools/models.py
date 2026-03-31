@@ -87,6 +87,7 @@ class AILog(models.Model):
     
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='ai_logs')
     tool = models.CharField(max_length=50)
+    title = models.CharField(max_length=255, blank=True, null=True)
     topic = models.CharField(max_length=255, blank=True, null=True)
     class_level = models.CharField(max_length=50, blank=True, null=True)
     difficulty = models.CharField(max_length=50, blank=True, null=True)
@@ -97,7 +98,8 @@ class AILog(models.Model):
     total_tokens = models.IntegerField(default=0)
     
     # Cost tracking
-    cost = models.DecimalField(max_digits=10, decimal_places=6, default=0)
+    credits = models.IntegerField(default=0, help_text="Credits deducted from the user")
+    cost = models.DecimalField(max_digits=10, decimal_places=6, default=0, help_text="Actual dollar cost (internal tracking)")
     
     # Request/Response data
     inputs = models.JSONField(null=True, blank=True)
@@ -130,11 +132,12 @@ class AILog(models.Model):
         # Calculate total tokens
         self.total_tokens = self.prompt_tokens + self.completion_tokens
         
-        # Calculate cost
-        # Input: $0.15 per 1M tokens, Output: $0.60 per 1M tokens
-        input_cost = Decimal(self.prompt_tokens) / Decimal(1000000) * Decimal('0.15')
-        output_cost = Decimal(self.completion_tokens) / Decimal(1000000) * Decimal('0.60')
-        self.cost = input_cost + output_cost
+        # Calculate cost only if not manually set
+        if self.cost == 0:
+            # Input: $0.15 per 1M tokens, Output: $0.60 per 1M tokens
+            input_cost = Decimal(self.prompt_tokens) / Decimal(1000000) * Decimal('0.15')
+            output_cost = Decimal(self.completion_tokens) / Decimal(1000000) * Decimal('0.60')
+            self.cost = input_cost + output_cost
         
         super().save(*args, **kwargs)
 
@@ -144,6 +147,7 @@ class UserAIUsage(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='ai_usage')
     total_requests = models.IntegerField(default=0)
     total_tokens = models.BigIntegerField(default=0)
+    total_credits = models.BigIntegerField(default=0, help_text="Total internal credits spent")
     total_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     last_request_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -252,3 +256,26 @@ class ChatMessage(models.Model):
 
     def __str__(self):
         return f"{self.role}: {self.content[:50]}... ({self.created_at})"
+
+class AIModelConfig(models.Model):
+    """Configuration for AI models including credit costing rules"""
+    
+    model_id = models.CharField(max_length=100, unique=True, help_text="Model identifier e.g. 'gpt-4o-mini'")
+    name = models.CharField(max_length=100, help_text="Human readable name")
+    provider = models.CharField(max_length=20, choices=AILog.PROVIDER_CHOICES, default='openai')
+    input_token_weight = models.DecimalField(max_digits=10, decimal_places=4, default=1.0)
+    output_token_weight = models.DecimalField(max_digits=10, decimal_places=4, default=1.0)
+    min_charge = models.IntegerField(default=50, help_text="Minimum credits for any request with this model")
+    credit_multiplier = models.DecimalField(max_digits=10, decimal_places=4, default=1.0)
+    enterprise_discount = models.DecimalField(max_digits=5, decimal_places=2, default=0.20, help_text="Discount for enterprise users (e.g. 0.20 for 20%)")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ai_model_configs'
+        verbose_name = 'AI Model Config'
+        verbose_name_plural = 'AI Model Configs'
+
+    def __str__(self):
+        return f"{self.name} ({self.model_id})"

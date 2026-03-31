@@ -14,47 +14,11 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 
 
 
-# Modal token/credit weights mapping
-# Each modal: input_token_weight, output_token_weight, min_charge, credit_multiplier, enterprise_discount
-MODAL_CREDIT_RULES = {
-    'deepseek-chat': {
-        'input_token_weight': 1,
-        'output_token_weight': 2,
-        'min_charge': 50,
-        'credit_multiplier': 1,  # 1 credit per input token, 2 per output
-        'enterprise_discount': 0.2,  # 20% discount
-    },
-    'gpt-4o-mini': {
-        'input_token_weight': 1,
-        'output_token_weight': 1.5,
-        'min_charge': 50,
-        'credit_multiplier': 1,
-        'enterprise_discount': 0.2,
-    },
-    'gpt-4': {
-        'input_token_weight': 6,
-        'output_token_weight': 6,
-        'min_charge': 50,
-        'credit_multiplier': 1,
-        'enterprise_discount': 0.2,
-    },
-    'gpt-4.1': {
-        'input_token_weight': 2,
-        'output_token_weight': 4,
-        'min_charge': 50,
-        'credit_multiplier': 1,
-        'enterprise_discount': 0.2,
-    },
-    'gpt-3.5': {
-        'input_token_weight': 1,
-        'output_token_weight': 1,
-        'min_charge': 50,
-        'credit_multiplier': 1,
-        'enterprise_discount': 0.2,
-    },
-}
+# (Removed MODAL_CREDIT_RULES dictionary in favor of AIModelConfig database model)
 from django.db.models import Sum, Count, Avg, F, Max, Q
-from django.db.models.functions import TruncDate
+from django.db.models.functions import TruncDate, TruncMonth, Coalesce
+import csv
+from django.http import HttpResponse, StreamingHttpResponse
 from django.utils import timezone
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -67,7 +31,7 @@ from authentication.permissions import *
 from authentication.models import Subscription
 from .models import (
     AILog, AITool, UserAIUsage, ToolCategory, ToolInput, ToolFavorite,
-    ChatSession, ChatMessage
+    ChatSession, ChatMessage, AIModelConfig
 )
 from schools.service import (
     check_long_request_limit,
@@ -84,19 +48,38 @@ class ToolCategoryListView(APIView):
     """
     Get all tool categories
     GET /api/v1/tools/categories/
+    POST /api/v1/tools/categories/
     """
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        categories = ToolCategory.objects.all()
+        type_filter = request.query_params.get('type')
+        if type_filter:
+            categories = ToolCategory.objects.filter(type=type_filter)
+        else:
+            categories = ToolCategory.objects.all()
         serializer = ToolCategorySerializer(categories, many=True)
         return Response(serializer.data)
+
+    def post(self, request):
+        """Admin only: Create a tool category"""
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = ToolCategorySerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ToolCategoryDetailView(APIView):
     """
     Get single tool category
     GET /api/v1/tools/categories/{id}/
+    PUT /api/v1/tools/categories/{id}/
+    PATCH /api/v1/tools/categories/{id}/
+    DELETE /api/v1/tools/categories/{id}/
     """
     permission_classes = [IsAuthenticated]
     
@@ -104,6 +87,39 @@ class ToolCategoryDetailView(APIView):
         category = get_object_or_404(ToolCategory, id=category_id)
         serializer = ToolCategorySerializer(category)
         return Response(serializer.data)
+
+    def put(self, request, category_id):
+        """Admin only: Update a tool category"""
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        category = get_object_or_404(ToolCategory, id=category_id)
+        serializer = ToolCategorySerializer(category, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, category_id):
+        """Admin only: Partial update a tool category"""
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        category = get_object_or_404(ToolCategory, id=category_id)
+        serializer = ToolCategorySerializer(category, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, category_id):
+        """Admin only: Delete a tool category"""
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        category = get_object_or_404(ToolCategory, id=category_id)
+        category.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ================== TOOL ENDPOINTS ==================
@@ -117,7 +133,7 @@ class ToolListView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        queryset = AITool.objects.filter(is_active=True).prefetch_related(
+        queryset = AITool.objects.all().prefetch_related(
             'inputs', 'categories'
         )
         
@@ -135,6 +151,20 @@ class ToolListView(APIView):
         if request.query_params.get('recommended') == 'true':
             queryset = queryset.filter(is_recommended=True)
 
+        # Filter by active status
+        active = request.query_params.get('active')
+        if active == 'true':
+            queryset = queryset.filter(is_active=True)
+        elif active == 'false':
+            queryset = queryset.filter(is_active=False)
+
+        # Filter by premium status
+        premium = request.query_params.get('premium')
+        if premium == 'true':
+            queryset = queryset.filter(is_premium=True)
+        elif premium == 'false':
+            queryset = queryset.filter(is_premium=False)
+
         # Search tools by name/description/student_friendly_name
         search = request.query_params.get('search')
         if search:
@@ -144,11 +174,34 @@ class ToolListView(APIView):
                 Q(student_friendly_name__icontains=search)
             )
         
-        serializer = ToolListSerializer(queryset, many=True, context={'request': request})
+        total_count = queryset.count()
+
+        # Pagination
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 15))
+        start = (page - 1) * page_size
+        end = start + page_size
+        paginated_qs = queryset[start:end]
+
+        serializer = ToolListSerializer(paginated_qs, many=True, context={'request': request})
         return Response({
-            'count': queryset.count(),
+            'count': total_count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': (total_count + page_size - 1) // page_size,
             'results': serializer.data
         })
+    
+    def post(self, request):
+        """Admin only: Create a new tool"""
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = ToolCreateUpdateSerializer(data=request.data)
+        if serializer.is_valid():
+            tool = serializer.save()
+            return Response(ToolDetailSerializer(tool, context={'request': request}).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ToolDetailView(APIView):
@@ -162,6 +215,87 @@ class ToolDetailView(APIView):
         tool = get_object_or_404(AITool, slug=tool_slug, is_active=True)
         serializer = ToolDetailSerializer(tool, context={'request': request})
         return Response(serializer.data)
+
+    def put(self, request, tool_slug):
+        """Admin only: Update a tool"""
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        tool = get_object_or_404(AITool, slug=tool_slug)
+        serializer = ToolCreateUpdateSerializer(tool, data=request.data, partial=True)
+        if serializer.is_valid():
+            tool = serializer.save()
+            return Response(ToolDetailSerializer(tool, context={'request': request}).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, tool_slug):
+        """Admin only: Partial update a tool"""
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        tool = get_object_or_404(AITool, slug=tool_slug)
+        serializer = ToolCreateUpdateSerializer(tool, data=request.data, partial=True)
+        if serializer.is_valid():
+            tool = serializer.save()
+            return Response(ToolDetailSerializer(tool, context={'request': request}).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, tool_slug):
+        """Admin only: Delete a tool"""
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        tool = get_object_or_404(AITool, slug=tool_slug)
+        tool.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ToolInputListView(APIView):
+    """Admin only: Manage inputs for a tool"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, tool_slug):
+        tool = get_object_or_404(AITool, slug=tool_slug)
+        inputs = tool.inputs.all()
+        serializer = ToolInputSerializer(inputs, many=True)
+        return Response(serializer.data)
+        
+    def post(self, request, tool_slug):
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        tool = get_object_or_404(AITool, slug=tool_slug)
+        data = request.data.copy()
+        data['tool'] = tool.id
+        serializer = ToolInputCreateUpdateSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ToolInputDetailView(APIView):
+    """Admin only: Update/Delete a tool input"""
+    permission_classes = [IsAuthenticated]
+    
+    def put(self, request, tool_slug, input_id):
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        tool_input = get_object_or_404(ToolInput, id=input_id, tool__slug=tool_slug)
+        serializer = ToolInputCreateUpdateSerializer(tool_input, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+    def delete(self, request, tool_slug, input_id):
+        if not request.user.is_superuser:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        tool_input = get_object_or_404(ToolInput, id=input_id, tool__slug=tool_slug)
+        tool_input.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ToolRecommendedView(APIView):
@@ -520,15 +654,20 @@ class AIRequestView(APIView):
 
                 # (Removed: credits calculation block is now after token estimation)
 
-            # Map modal to provider
-            modal_provider_map = {
-                'gpt-4': 'openai',
-                'gpt-4o-mini': 'openai',
-                'gpt-3.5': 'openai',
-                'deepseek-chat': 'deepseek',
-            }
-            provider = modal_provider_map.get(selected_modal, 'openai')
-            model = selected_modal
+            # Dynamic model and provider configuration
+            # Fetch config from DB based on the selected identifier
+            model_config = AIModelConfig.objects.filter(model_id=selected_modal, is_active=True).first()
+            
+            if model_config:
+                provider = model_config.provider
+                model = model_config.model_id
+            else:
+                # Fallback for unconfigured or legacy models
+                # (Ideally all models should be in AIModelConfig eventually)
+                provider = 'openai'
+                model = selected_modal
+            
+            print(f"Selected Model: {model}, Provider: {provider}")
 
 
 
@@ -559,7 +698,7 @@ class AIRequestView(APIView):
                     provider=provider,  # This is set by modal selection logic above
                     model=model,        # Always pass the selected modal/model
                     temperature=getattr(settings, 'OPENAI_TEMPERATURE', float(os.getenv('OPENAI_TEMPERATURE', 0.5))),
-                    max_tokens=getattr(settings, 'OPENAI_MAX_TOKENS', int(os.getenv('OPENAI_MAX_TOKENS', 400)))
+                    max_tokens=getattr(settings, 'OPENAI_MAX_TOKENS', int(os.getenv('OPENAI_MAX_TOKENS', 4096)))
                 )
             except Exception as e:
                 return Response({
@@ -581,15 +720,23 @@ class AIRequestView(APIView):
                     'message': f'Error parsing AI provider response: {str(e)}'
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            # Calculate credits for this modal using actual token usage
-            modal_rules = MODAL_CREDIT_RULES.get(model, MODAL_CREDIT_RULES['gpt-3.5'])
-            input_weight = modal_rules['input_token_weight']
-            output_weight = modal_rules['output_token_weight']
-            min_charge = modal_rules['min_charge']
-            credit_multiplier = modal_rules['credit_multiplier']
-            enterprise_discount = modal_rules['enterprise_discount']
+            # Calculate credits for this model using database rules
+            try:
+                modal_config = AIModelConfig.objects.get(model_id=model, is_active=True)
+                input_weight = modal_config.input_token_weight
+                output_weight = modal_config.output_token_weight
+                min_charge = modal_config.min_charge
+                credit_multiplier = modal_config.credit_multiplier
+                enterprise_discount = modal_config.enterprise_discount
+            except AIModelConfig.DoesNotExist:
+                # Default fallback rules if model not configured in DB
+                input_weight = Decimal('1.0')
+                output_weight = Decimal('1.0')
+                min_charge = 50
+                credit_multiplier = Decimal('1.0')
+                enterprise_discount = Decimal('0.20')
 
-            credits_used = (
+            credits_used = int(
                 (prompt_tokens * input_weight + completion_tokens * output_weight) * credit_multiplier
             )
             if credits_used < min_charge:
@@ -610,6 +757,7 @@ class AIRequestView(APIView):
                 log = self._create_log(
                     user=user,
                     tool=tool_for_logging,
+                    title=validated_data.get('title') or validated_data.get('topic', ''),
                     topic=validated_data.get('topic', ''),
                     class_level=validated_data.get('class_level', ''),
                     difficulty=validated_data.get('difficulty', ''),
@@ -619,7 +767,8 @@ class AIRequestView(APIView):
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
                     response_time=response_time,
-                    provider=ai_provider
+                    provider=ai_provider,
+                    credits=credits_used
                 )
             except Exception as e:
                 return Response({
@@ -663,12 +812,13 @@ class AIRequestView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     
-    def _create_log(self, user, tool, topic, class_level, difficulty, 
-                    prompt, response, prompt_tokens, completion_tokens, response_time, provider, inputs=None):
+    def _create_log(self, user, tool, title, topic, class_level, difficulty, 
+                    prompt, response, prompt_tokens, completion_tokens, response_time, provider, credits, inputs=None):
         """Create AI log entry with provider information"""
         log = AILog.objects.create(
             user=user,
             tool=tool,
+            title=title,
             topic=topic,
             class_level=class_level,
             difficulty=difficulty,
@@ -678,7 +828,8 @@ class AIRequestView(APIView):
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             response_time=response_time,
-            provider=provider
+            provider=provider,
+            credits=credits
         )
         return log
     
@@ -687,6 +838,7 @@ class AIRequestView(APIView):
         usage, created = UserAIUsage.objects.get_or_create(user=user)
         usage.total_requests += 1
         usage.total_tokens += log.total_tokens
+        usage.total_credits += log.credits
         usage.total_cost += log.cost
         usage.last_request_at = timezone.now()
         usage.save()
@@ -903,7 +1055,7 @@ class AdminDashboardView(APIView):
     GET: Get comprehensive admin analytics
     """
     
-    permission_classes = [IsAdmin]
+    permission_classes = [IsSuperUser]
     
     def get(self, request):
         """Get admin dashboard data"""
@@ -930,17 +1082,27 @@ class AdminDashboardView(APIView):
         # Overall metrics
         overall_stats = logs.aggregate(
             total_requests=Count('id'),
-            total_tokens=Sum('total_tokens'),
-            total_cost=Sum('cost')
+            total_tokens=Coalesce(Sum('total_tokens'), 0),
+            total_credits=Coalesce(Sum('credits'), 0),
+            total_cost=Coalesce(Sum('cost'), Decimal('0.00'))
         )
+        
+        # Tool metrics
+        tool_stats = {
+            'total_categories': ToolCategory.objects.count(),
+            'total_tools': AITool.objects.count(),
+            'active_tools': AITool.objects.filter(is_active=True).count(),
+            'premium_tools': AITool.objects.filter(is_premium=True).count()
+        }
         
         # Cost per tool
         cost_per_tool = logs.values('tool').annotate(
             total_requests=Count('id'),
             total_tokens_sum=Sum('total_tokens'),
+            total_credits=Sum('credits'),
             total_cost=Sum('cost'),
             avg_tokens=Avg('total_tokens')
-        ).order_by('-total_cost')
+        ).order_by('-total_credits')
         
         # Top users
         top_users = logs.values(
@@ -953,14 +1115,47 @@ class AdminDashboardView(APIView):
             last_request=Max('created_at')
         ).order_by('-total_cost')[:10]
         
-        # Daily breakdown
         daily_breakdown = logs.annotate(
             date=TruncDate('created_at')
         ).values('date').annotate(
             requests=Count('id'),
-            tokens=Sum('total_tokens'),
-            cost=Sum('cost')
+            tokens=Coalesce(Sum('total_tokens'), 0),
+            credits=Coalesce(Sum('credits'), 0),
+            cost=Coalesce(Sum('cost'), Decimal('0.00'))
         ).order_by('-date')[:30]
+
+        # Monthly breakdown (for annual bar chart)
+        current_year = timezone.now().year
+        monthly_breakdown = AILog.objects.filter(created_at__year=current_year).annotate(
+            month=TruncMonth('created_at')
+        ).values('month').annotate(
+            requests=Count('id'),
+            tokens=Coalesce(Sum('total_tokens'), 0),
+            credits=Coalesce(Sum('credits'), 0),
+            cost=Coalesce(Sum('cost'), Decimal('0.00'))
+        ).order_by('month')
+
+        # Provider breakdown (for donut chart)
+        provider_stats = logs.values('provider').annotate(
+            total_requests=Count('id'),
+            total_tokens=Coalesce(Sum('total_tokens'), 0),
+            total_credits=Coalesce(Sum('credits'), 0),
+            total_cost=Coalesce(Sum('cost'), Decimal('0.00'))
+        )
+
+        # Explicit spending summary (Today, This Month, This Year)
+        now = timezone.now()
+        spending_summary = {
+            'today': AILog.objects.filter(created_at__date=now.date()).aggregate(
+                credits=Coalesce(Sum('credits'), 0), cost=Coalesce(Sum('cost'), Decimal('0.00')), requests=Count('id')
+            ),
+            'this_month': AILog.objects.filter(created_at__year=now.year, created_at__month=now.month).aggregate(
+                credits=Coalesce(Sum('credits'), 0), cost=Coalesce(Sum('cost'), Decimal('0.00')), requests=Count('id')
+            ),
+            'this_year': AILog.objects.filter(created_at__year=now.year).aggregate(
+                credits=Coalesce(Sum('credits'), 0), cost=Coalesce(Sum('cost'), Decimal('0.00')), requests=Count('id')
+            )
+        }
         
         return Response({
             'success': True,
@@ -968,11 +1163,16 @@ class AdminDashboardView(APIView):
             'overall': {
                 'total_requests': overall_stats['total_requests'] or 0,
                 'total_tokens': overall_stats['total_tokens'] or 0,
+                'total_credits': overall_stats['total_credits'] or 0,
                 'total_cost': float(overall_stats['total_cost'] or 0),
             },
+            'tool_stats': tool_stats,
+            'spending_summary': spending_summary,
+            'provider_stats': list(provider_stats),
             'cost_per_tool': [{**item, 'total_tokens': item['total_tokens_sum']} for item in cost_per_tool],
             'top_users': list(top_users),
-            'daily_breakdown': list(daily_breakdown)
+            'daily_breakdown': list(daily_breakdown),
+            'monthly_breakdown': list(monthly_breakdown)
         }, status=status.HTTP_200_OK)
 
 
@@ -980,7 +1180,7 @@ class ToolAnalyticsView(APIView):
     """
     GET: Get analytics per tool
     """
-    permission_classes = [IsAdmin]
+    permission_classes = [IsSuperUser]
     
     def get(self, request):
         """Get tool-specific analytics"""
@@ -1023,7 +1223,7 @@ class UserAnalyticsView(APIView):
     """
     GET: Get analytics per user
     """
-    permission_classes = [IsAdmin]
+    permission_classes = [IsSuperUser]
     
     def get(self, request):
         """Get user-specific analytics"""
@@ -1197,7 +1397,7 @@ class ChatDetailAPIView(APIView):
     def patch(self, request, session_id):
         session = self.get_object(session_id)
         # Only owner or staff may update
-        if session.user and session.user != request.user and not request.user.is_staff:
+        if session.user and session.user != request.user and not request.user.is_superuser:
             return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
 
         title = request.data.get('title')
@@ -1210,7 +1410,7 @@ class ChatDetailAPIView(APIView):
 
     def delete(self, request, session_id):
         session = self.get_object(session_id)
-        if session.user and session.user != request.user and not request.user.is_staff:
+        if session.user and session.user != request.user and not request.user.is_superuser:
             return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
         session.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -1223,7 +1423,7 @@ class ChatMessagesAPIView(APIView):
     def get(self, request, session_id):
         session = get_object_or_404(ChatSession, session_id=session_id)
         # Ensure requester is owner or staff
-        if session.user and session.user != request.user and not request.user.is_staff:
+        if session.user and session.user != request.user and not request.user.is_superuser:
             return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
 
         page = int(request.query_params.get('page', 1))
@@ -1245,7 +1445,7 @@ class ChatReplyAPIView(APIView):
 
     def post(self, request, session_id):
         session = get_object_or_404(ChatSession, session_id=session_id)
-        if session.user and session.user != request.user and not request.user.is_staff:
+        if session.user and session.user != request.user and not request.user.is_superuser:
             return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
 
         message_text = request.data.get('message')
@@ -1354,3 +1554,108 @@ class UsageCreditsView(APIView):
             ).order_by('-created_at').first()
         
         return subscription
+
+
+# ================== EXPORT VIEWS ==================
+
+class AdminAILogListView(APIView):
+    """
+    GET: List all AI logs across the entire system (Admin only)
+    """
+    permission_classes = [IsSuperUser]
+
+    def get(self, request):
+        logs = AILog.objects.all().select_related('user').order_by('-created_at')
+
+        # Filtering logic
+        search = request.query_params.get('search')
+        if search:
+            logs = logs.filter(
+                Q(user__email__icontains=search) | 
+                Q(user__username__icontains=search) |
+                Q(tool__icontains=search) |
+                Q(topic__icontains=search) |
+                Q(title__icontains=search)
+            )
+
+        provider = request.query_params.get('provider')
+        if provider:
+            logs = logs.filter(provider=provider)
+
+        tool_slug = request.query_params.get('tool')
+        if tool_slug:
+            logs = logs.filter(tool=tool_slug)
+
+        start_date = request.query_params.get('start_date')
+        if start_date:
+            logs = logs.filter(created_at__gte=start_date)
+
+        end_date = request.query_params.get('end_date')
+        if end_date:
+            try:
+                dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+                logs = logs.filter(created_at__lt=dt)
+            except ValueError:
+                logs = logs.filter(created_at__lte=end_date)
+
+        # Pagination
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 20))
+        total_count = logs.count()
+        
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        
+        serializer = AILogListSerializer(logs[start_idx:end_idx], many=True)
+        
+        return Response({
+            'success': True,
+            'count': total_count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': (total_count + page_size - 1) // page_size if total_count > 0 else 1,
+            'results': serializer.data
+        })
+
+class AILogExportView(APIView):
+    """
+    GET: Export AI logs to CSV with advanced filters (Admin)
+    """
+    permission_classes = [IsSuperUser]
+
+    def get(self, request):
+        logs = AILog.objects.all().select_related('user').order_by('-created_at')
+
+        # Filtering logic (must match AdminAILogListView)
+        search = request.query_params.get('search')
+        if search:
+            logs = logs.filter(
+                Q(user__email__icontains=search) | 
+                Q(user__username__icontains=search) |
+                Q(tool__icontains=search) |
+                Q(topic__icontains=search) |
+                Q(title__icontains=search)
+            )
+
+        provider = request.query_params.get('provider')
+        if provider:
+            logs = logs.filter(provider=provider)
+
+        tool_slug = request.query_params.get('tool')
+        if tool_slug:
+            logs = logs.filter(tool=tool_slug)
+
+        start_date = request.query_params.get('start_date')
+        if start_date:
+            logs = logs.filter(created_at__gte=start_date)
+
+        end_date = request.query_params.get('end_date')
+        if end_date:
+            try:
+                dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+                logs = logs.filter(created_at__lt=dt)
+            except ValueError:
+                logs = logs.filter(created_at__lte=end_date)
+
+        serializer = AILogListSerializer(logs[:10000], many=True)
+        return Response(serializer.data)

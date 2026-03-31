@@ -886,6 +886,16 @@ class NotificationMarkReadView(APIView):
             return Response({'success': False, 'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
 
 
+class NotificationMarkAllReadView(APIView):
+    """PATCH: Mark all unread notifications as read for current user"""
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        """Mark ALL user's notifications as read"""
+        count = Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+        return Response({'success': True, 'data': {'marked_read': count}})
+
+
 class UnreadNotificationsView(APIView):
     """GET: Retrieve all unread notifications for the current user"""
     permission_classes = [IsAuthenticated]

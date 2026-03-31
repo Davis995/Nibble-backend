@@ -8,9 +8,11 @@ from django.db import transaction, models
 from django.utils import timezone
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, viewsets, filters
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes
+from django_filters.rest_framework import DjangoFilterBackend
+from authentication.permissions import IsAdmin
 
 from .models import Payment, Invoice, Audit
 from .serializers import PaymentSerializer, InvoiceSerializer, AuditSerializer, PaymentInitiateSerializer
@@ -22,134 +24,83 @@ from schools.models import School
 # PAYMENT CRUD VIEWS
 # ============================================================================
 
-class PaymentListView(APIView):
-    """
-    GET: List payments (filtered by user/organisation)
-    """
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        """List payments"""
-        user = request.user
-
-        if user.is_superuser:
-            payments = Payment.objects.all()
-        elif user.role in ['operator', 'sale_manager']:
-            payments = Payment.objects.all()  # Staff can see all payments
-        else:
-            # Regular users see only their payments
-            payments = Payment.objects.filter(
-                models.Q(user=user) | models.Q(organisation__admin_user=user)
-            )
-
-        payments = payments.order_by('-created_at')
-        serializer = PaymentSerializer(payments, many=True)
-        return Response(serializer.data)
-
-
-class PaymentDetailView(APIView):
-    """
-    GET: Get payment details
-    """
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, payment_id):
-        """Get payment details"""
-        try:
-            payment = Payment.objects.get(id=payment_id)
-
-            # Check permissions
-            if not self._can_access_payment(request.user, payment):
-                return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
-
-            serializer = PaymentSerializer(payment)
-            return Response(serializer.data)
-        except Payment.DoesNotExist:
-            return Response({'error': 'Payment not found'}, status=status.HTTP_404_NOT_FOUND)
-
-    def _can_access_payment(self, user, payment):
-        """Check if user can access this payment"""
-        if user.is_superuser or user.role in ['operator', 'sale_manager']:
-            return True
-        return (payment.user == user or
-                (payment.organisation and payment.organisation.admin_user == user))
+# LEGACY PAYMENT VIEWS - REPLACED BY VIEWSETS
+# class PaymentListView(APIView): ...
+# class PaymentDetailView(APIView): ...
+# class InvoiceListView(APIView): ...
+# class InvoiceDetailView(APIView): ...
+# class AuditListView(APIView): ...
 
 
 # ============================================================================
-# INVOICE CRUD VIEWS
+# ADMIN VIEWSETS
 # ============================================================================
 
-class InvoiceListView(APIView):
+class AdminPaymentViewSet(viewsets.ModelViewSet):
     """
-    GET: List invoices (filtered by user/organisation)
+    Administrative ViewSet for managing payment records.
     """
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        """List invoices"""
-        user = request.user
-
-        if user.is_superuser:
-            invoices = Invoice.objects.all()
-        elif user.role in ['operator', 'sale_manager']:
-            invoices = Invoice.objects.all()  # Staff can see all invoices
-        else:
-            # Regular users see only their invoices
-            invoices = Invoice.objects.filter(
-                models.Q(user=user) | models.Q(organisation__admin_user=user)
-            )
-
-        invoices = invoices.order_by('-created_at')
-        serializer = InvoiceSerializer(invoices, many=True)
-        return Response(serializer.data)
+    queryset = Payment.objects.all().select_related('user', 'organisation', 'subscription').order_by('-created_at')
+    serializer_class = PaymentSerializer
+    permission_classes = [IsAuthenticated, IsAdmin]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    
+    # Filterable fields
+    filterset_fields = ['status', 'payment_type', 'currency', 'paymethod']
+    
+    # Searchable fields
+    search_fields = [
+        'merchant_reference', 'order_tracking_id', 
+        'payer_name', 'payer_email', 'payer_phone',
+        'user__email', 'organisation__name'
+    ]
+    
+    # Sortable fields
+    ordering_fields = ['created_at', 'amount', 'transaction_date']
 
 
-class InvoiceDetailView(APIView):
+class AdminInvoiceViewSet(viewsets.ModelViewSet):
     """
-    GET: Get invoice details
+    Administrative ViewSet for managing invoices.
     """
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, invoice_id):
-        """Get invoice details"""
-        try:
-            invoice = Invoice.objects.get(id=invoice_id)
-
-            # Check permissions
-            if not self._can_access_invoice(request.user, invoice):
-                return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
-
-            serializer = InvoiceSerializer(invoice)
-            return Response(serializer.data)
-        except Invoice.DoesNotExist:
-            return Response({'error': 'Invoice not found'}, status=status.HTTP_404_NOT_FOUND)
-
-    def _can_access_invoice(self, user, invoice):
-        """Check if user can access this invoice"""
-        if user.is_superuser or user.role in ['operator', 'sale_manager']:
-            return True
-        return (invoice.user == user or
-                (invoice.organisation and invoice.organisation.admin_user == user))
+    queryset = Invoice.objects.all().select_related('user', 'organisation', 'payment').order_by('-created_at')
+    serializer_class = InvoiceSerializer
+    permission_classes = [IsAuthenticated, IsAdmin]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    
+    # Filterable fields
+    filterset_fields = ['status', 'currency']
+    
+    # Searchable fields
+    search_fields = [
+        'invoice_number', 'user__email', 'organisation__name',
+        'payment__merchant_reference'
+    ]
+    
+    # Sortable fields
+    ordering_fields = ['created_at', 'amount', 'due_date', 'paid_at']
 
 
-# ============================================================================
-# AUDIT CRUD VIEWS
-# ============================================================================
-
-class AuditListView(APIView):
+class AdminAuditViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    GET: List audit logs
+    Administrative ViewSet for viewing payment audit logs.
     """
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        """List audit logs"""
-        if not (request.user.is_superuser or request.user.role in ['operator', 'sale_manager']):
-            return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
-
-        audits = Audit.objects.all().order_by('-created_at')
-        serializer = AuditSerializer(audits, many=True)
-        return Response(serializer.data)
+    queryset = Audit.objects.all().select_related('payment', 'subscription').order_by('-created_at')
+    serializer_class = AuditSerializer
+    permission_classes = [IsAuthenticated, IsAdmin]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    
+    # Filterable fields
+    filterset_fields = ['status', 'payment', 'subscription']
+    
+    # Searchable fields
+    search_fields = [
+        'payment__merchant_reference',
+        'subscription__id'
+    ]
+    
+    # Sortable fields
+    ordering_fields = ['created_at']
 
 
 # ============================================================================

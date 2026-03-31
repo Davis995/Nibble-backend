@@ -17,14 +17,28 @@ from .views import (
     TeacherDashboardView,
     StudentDashboardView,
     ToolFavoritesListView,
-    ToolFavoriteToggleView
-    , ChatAPIView, ChatDetailAPIView, ChatMessagesAPIView, ChatReplyAPIView,
-    UsageCreditsView
+    ToolFavoriteToggleView,
+    ChatAPIView,
+    ChatDetailAPIView,
+    ChatMessagesAPIView,
+    ChatReplyAPIView,
+    UsageCreditsView,
+    ToolInputListView,
+    ToolInputDetailView,
+    AILogExportView,
+    AdminAILogListView
 )
 
 app_name = 'nibble_ai'
 
 urlpatterns = [
+    # Admin Analytics & Management (Top priority to avoid slug shadowing)
+    path('admin/logs/export/', AILogExportView.as_view(), name='ai-logs-export'),
+    path('admin/dashboard/', AdminDashboardView.as_view(), name='admin-dashboard'),
+    path('admin/tools/', ToolAnalyticsView.as_view(), name='tool-analytics'),
+    path('admin/users/', UserAnalyticsView.as_view(), name='user-analytics'),
+    path('admin/logs/', AdminAILogListView.as_view(), name='admin-logs-list'),
+
     # Tool Categories
     path('categories/', ToolCategoryListView.as_view(), name='category-list'),
     path('categories/<int:category_id>/', ToolCategoryDetailView.as_view(), name='category-detail'),
@@ -43,6 +57,10 @@ urlpatterns = [
     # Catch-all tool detail must come last to avoid shadowing other routes
     path('<slug:tool_slug>/', ToolDetailView.as_view(), name='tool-detail'),
     
+    # Tool Inputs (Admin)
+    path('<slug:tool_slug>/inputs/', ToolInputListView.as_view(), name='tool-input-list'),
+    path('<slug:tool_slug>/inputs/<int:input_id>/', ToolInputDetailView.as_view(), name='tool-input-detail'),
+    
     # User AI Logs
     path('logs/', AILogListView.as_view(), name='ai-logs-list'),
     path('logs/history/', AILogHistoryModalView.as_view(), name='ai-log-history-modal'),
@@ -59,9 +77,4 @@ urlpatterns = [
     
     # Usage
     path('usage/credits/', UsageCreditsView.as_view(), name='usage-credits'),
-    
-    # Admin Analytics
-    path('admin/dashboard/', AdminDashboardView.as_view(), name='admin-dashboard'),
-    path('admin/tools/', ToolAnalyticsView.as_view(), name='tool-analytics'),
-    path('admin/users/', UserAnalyticsView.as_view(), name='user-analytics'),
 ]

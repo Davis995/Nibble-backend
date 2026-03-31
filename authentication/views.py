@@ -16,6 +16,8 @@ from django.db import models
 from datetime import date, timedelta
 from .permissions import IsAdmin
 from .models import User, Subscription, Plan, PlanFeature
+from rest_framework import viewsets, filters
+from django_filters.rest_framework import DjangoFilterBackend
 from .serializers import *;
 from .serializers import InvitationCreateSerializer, InvitationAcceptSerializer
 from .models import Invitation
@@ -23,6 +25,8 @@ import secrets, urllib.parse
 from django.conf import settings
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
+from .models import PasswordResetToken, PasswordResetCode
+import random
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -110,8 +114,10 @@ class UserLoginView(APIView):
                         'is_superuser': user.is_superuser,
                         'is_staff': user.is_staff,
                         'user_type': user.user_type,
-                        'organisation': user.organisation.name if user.organisation else None,
-                        'organisation_id': str(user.organisation.id) if getattr(user, 'organisation', None) else None,
+                        'onboarding': user.is_onboarded,
+                        'organisation': (user.organisation or getattr(user, 'managed_school', None)).name if (user.organisation or getattr(user, 'managed_school', None)) else None,
+                        'organisation_id': str((user.organisation or getattr(user, 'managed_school', None)).id) if (user.organisation or getattr(user, 'managed_school', None)) else None,
+                        'org_orientation': (user.organisation or getattr(user, 'managed_school', None)).org_orientation if (user.organisation or getattr(user, 'managed_school', None)) else False,
                         'is_trial_active': user.is_trial_active(),
                         'trial_remaining_days': self._get_trial_remaining_days(user),
                         'subscription': subscription_info
@@ -274,8 +280,10 @@ class GoogleLoginView(APIView):
                 'is_superuser': user.is_superuser,
                 'is_staff': user.is_staff,
                 'user_type': user.user_type,
+                'onboarding': user.is_onboarded,
                 'organisation': user.organisation.name if user.organisation else None,
                 'organisation_id': str(user.organisation.id) if getattr(user, 'organisation', None) else None,
+                'org_orientation': user.organisation.org_orientation if user.organisation else False,
                 'is_trial_active': user.is_trial_active(),
                 'trial_remaining_days': self._get_trial_remaining_days(user),
                 'subscription': subscription_info
@@ -317,6 +325,7 @@ class CurrentUserView(APIView):
                 'name': user.get_full_name() or user.username,
                 'email': user.email,
                 'role': 'superuser' if user.is_superuser else user.role,
+                'org_orientation': (user.organisation or getattr(user, 'managed_school', None)).org_orientation if (user.organisation or getattr(user, 'managed_school', None)) else False,
                 'avatar': None
             }
         }, status=status.HTTP_200_OK)
@@ -346,6 +355,45 @@ class UserProfileUpdateView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+class UserOnboardingUpdateView(APIView):
+    """PUT: Update user onboarding along with other modal data"""
+    permission_classes = [IsAuthenticated]
+    
+    def put(self, request, *args, **kwargs):
+        user = request.user
+        data = request.data
+        
+        # Optional user fields that could be sent from the onboarding modal
+        if 'phone_number' in data:
+            user.phone_number = data['phone_number']
+            
+        if 'role' in data and data['role'] in ['student', 'teacher']:
+            user.role = data['role']
+            
+        if 'user_type' in data and data['user_type'] in dict(User.USER_TYPE_CHOICES).keys():
+            user.user_type = data['user_type']
+            
+        if 'first_name' in data:
+            user.first_name = data['first_name']
+            
+        if 'last_name' in data:
+            user.last_name = data['last_name']
+            
+        # specifically handles mapping onboarding to is_onboarded field
+        if 'onboarding' in data:
+            val = data['onboarding']
+            user.is_onboarded = (str(val).lower() == 'true' or val is True)
+            
+        user.save()
+        
+        # Can reuse UserProfileSerializer to send the updated user state back
+        serializer = UserProfileSerializer(user)
+        return Response(
+            {'message': 'Onboarding data updated successfully', 'data': serializer.data},
+            status=status.HTTP_200_OK
+        )
+
+
 class ChangePasswordView(APIView):
     """POST: Change user password"""
     permission_classes = [IsAuthenticated]
@@ -366,7 +414,45 @@ class PasswordResetRequestView(APIView):
     authentication_classes = []  # No authentication required for password reset request
     
     def post(self, request, *args, **kwargs):
-        return Response({'message': 'Password reset email would be sent'}, status=status.HTTP_200_OK)
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        email = serializer.validated_data['email']
+        user = User.objects.filter(email__iexact=email).first()
+
+        if user:
+            # Generate secure token
+            token = secrets.token_urlsafe(32)
+            expires_at = timezone.now() + timezone.timedelta(hours=24)
+
+            PasswordResetToken.objects.create(
+                user=user,
+                token=token,
+                expires_at=expires_at
+            )
+
+            # Build frontend reset link
+            frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000').rstrip('/')
+            reset_link = f"{frontend_base}/forgot-password/?token={urllib.parse.quote(token)}"
+
+            # Send email
+            subject = "Password Reset Request"
+            plain = f"You requested a password reset. Click the following link to set your new password: {reset_link}\n\nIf you did not request this, please ignore this email."
+            html = f"<p>You requested a password reset. Click the link below to set your new password:</p><p><a href='{reset_link}'>{reset_link}</a></p><p>If you did not request this, please ignore this email.</p>"
+
+            send_mail(
+                subject, 
+                plain, 
+                getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com'), 
+                [email], 
+                html_message=html, 
+                fail_silently=True
+            )
+
+            return Response({'message': 'Password reset email has been sent.'}, status=status.HTTP_200_OK)
+        else:
+            return Response({'error': 'User with this email does not exist.'}, status=status.HTTP_404_NOT_FOUND)
 
 
 class PasswordResetConfirmView(APIView):
@@ -375,7 +461,124 @@ class PasswordResetConfirmView(APIView):
     authentication_classes = []  # No authentication required for password reset confirm
     
     def post(self, request, *args, **kwargs):
-        return Response({'message': 'Password reset confirmed'}, status=status.HTTP_200_OK)
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        token = serializer.validated_data['token']
+        new_password = serializer.validated_data['new_password']
+
+        try:
+            reset_token = PasswordResetToken.objects.get(token=token)
+        except PasswordResetToken.DoesNotExist:
+            return Response({'error': 'Invalid reset token'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not reset_token.is_valid():
+            return Response({'error': 'Reset token is invalid or expired'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = reset_token.user
+        user.set_password(new_password)
+        user.save()
+
+        reset_token.used = True
+        reset_token.save()
+
+        return Response({'message': 'Password has been reset successfully'}, status=status.HTTP_200_OK)
+
+
+class AccountResetRequestView(APIView):
+    """
+    POST: Request account reset (sends 6-digit code)
+    Requires authentication as per user request
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            return Response({"success": False, "message": "Email is required"}, status=400)
+        
+        # Verify email matches current user if needed, 
+        # but the request asks to use request.user
+        if email.lower() != request.user.email.lower():
+            return Response({"success": False, "message": "Email does not match your account"}, status=400)
+
+        # Generate 6-digit code
+        code = "".join([str(random.randint(0, 9)) for _ in range(6)])
+        
+        # Save code to database
+        expires_at = timezone.now() + timezone.timedelta(minutes=15)
+        PasswordResetCode.objects.update_or_create(
+            user=request.user, 
+            defaults={'code': code, 'expires_at': expires_at, 'used': False}
+        )
+        
+        # Send Email
+        subject = 'Your Account Reset Code'
+        message = f'Your verification code is: {code}'
+        from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
+        recipient_list = [email]
+        
+        try:
+            send_mail(subject, message, from_email, recipient_list)
+        except Exception as e:
+            # Log error but don't fail if mail server is not configured
+            print(f"DEBUG: Failed to send email: {e}")
+        
+        print(f"DEBUG: Account reset code for {email}: {code}")
+
+        return Response({
+            "success": True, 
+            "message": "A verification code has been sent to your email."
+        })
+
+
+class AccountResetVerifyView(APIView):
+    """
+    POST: Verify account reset code
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        code = request.data.get('code')
+        if not code:
+            return Response({"success": False, "message": "Code is required"}, status=400)
+            
+        reset_code = PasswordResetCode.objects.filter(user=request.user).order_by('-created_at').first()
+        
+        if reset_code and reset_code.is_valid() and reset_code.code == code:
+            return Response({"success": True, "message": "Code verified successfully"})
+            
+        return Response({"success": False, "message": "Invalid or expired verification code"}, status=400)
+
+
+class AccountResetConfirmView(APIView):
+    """
+    POST: Confirm account reset and set new password
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        code = request.data.get('code') # Verify code again for security or assume verified
+        new_password = request.data.get('new_password')
+        
+        if not new_password:
+            return Response({"success": False, "message": "New password is required"}, status=400)
+            
+        # Re-verify code
+        reset_code = PasswordResetCode.objects.filter(user=request.user).order_by('-created_at').first()
+        if not reset_code or not reset_code.is_valid() or reset_code.code != code:
+             return Response({"success": False, "message": "Invalid or expired verification code"}, status=400)
+
+        # Update user password
+        request.user.set_password(new_password)
+        request.user.save()
+        
+        # Mark code as used
+        reset_code.used = True
+        reset_code.save()
+        
+        return Response({"success": True, "message": "Password updated successfully"})
 
 
 class EmailVerificationView(APIView):
@@ -395,115 +598,9 @@ class ResendVerificationEmailView(APIView):
         return Response({'message': 'Verification email resent'}, status=status.HTTP_200_OK)
 
 
-class UserListView(APIView):
-    """GET: List all users (admin only), POST: Create new user (admin only)"""
-    permission_classes = [IsAdmin]
-    
-    def get(self, request, *args, **kwargs):
-        # Get query parameters for filtering/pagination
-        role = request.query_params.get('role')
-        is_active = request.query_params.get('is_active')
-        search = request.query_params.get('search')
-        page = int(request.query_params.get('page', 1))
-        limit = int(request.query_params.get('limit', 20))
-        
-        # Base queryset
-        users = User.objects.all()
-        
-        # Apply filters
-        if role:
-            users = users.filter(role=role)
-        if is_active is not None:
-            users = users.filter(is_active=is_active.lower() == 'true')
-        if search:
-            users = users.filter(
-                models.Q(username__icontains=search) |
-                models.Q(email__icontains=search) |
-                models.Q(first_name__icontains=search) |
-                models.Q(last_name__icontains=search)
-            )
-        
-        # Pagination
-        total = users.count()
-        start = (page - 1) * limit
-        end = start + limit
-        users_page = users[start:end]
-        
-        serializer = AdminUserSerializer(users_page, many=True)
-        return Response({
-            'users': serializer.data,
-            'pagination': {
-                'page': page,
-                'limit': limit,
-                'total': total,
-                'pages': (total + limit - 1) // limit
-            }
-        }, status=status.HTTP_200_OK)
-    
-    def post(self, request, *args, **kwargs):
-        serializer = AdminUserSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            return Response({
-                'message': 'User created successfully',
-                'user': AdminUserSerializer(user).data
-            }, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class UserDetailView(APIView):
-    """GET: Get user details, PUT/PATCH: Update user, DELETE: Delete user (admin only)"""
-    permission_classes = [IsAdmin]
-    
-    def get(self, request, user_id, *args, **kwargs):
-        try:
-            user = User.objects.get(id=user_id)
-            serializer = AdminUserSerializer(user)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except User.DoesNotExist:
-            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    def put(self, request, user_id, *args, **kwargs):
-        try:
-            user = User.objects.get(id=user_id)
-            serializer = AdminUserSerializer(user, data=request.data, partial=False)
-            if serializer.is_valid():
-                updated_user = serializer.save()
-                return Response({
-                    'message': 'User updated successfully',
-                    'user': AdminUserSerializer(updated_user).data
-                }, status=status.HTTP_200_OK)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        except User.DoesNotExist:
-            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    def patch(self, request, user_id, *args, **kwargs):
-        try:
-            user = User.objects.get(id=user_id)
-            serializer = AdminUserSerializer(user, data=request.data, partial=True)
-            if serializer.is_valid():
-                updated_user = serializer.save()
-                return Response({
-                    'message': 'User updated successfully',
-                    'user': AdminUserSerializer(updated_user).data
-                }, status=status.HTTP_200_OK)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        except User.DoesNotExist:
-            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    def delete(self, request, user_id, *args, **kwargs):
-        try:
-            user = User.objects.get(id=user_id)
-            # Prevent deleting superusers or operators by other operators
-            if user.is_superuser and not request.user.is_superuser:
-                return Response({'error': 'Cannot delete superuser'}, status=status.HTTP_403_FORBIDDEN)
-            if user.role == 'operator' and not request.user.is_superuser:
-                return Response({'error': 'Cannot delete operator'}, status=status.HTTP_403_FORBIDDEN)
-            
-            user.delete()
-            return Response({'message': 'User deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
-        except User.DoesNotExist:
-            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+# Legacy User Views - Now handled by AdminUserViewSet
+# class UserListView(APIView): ...
+# class UserDetailView(APIView): ...
 
 
 class StudentDashboardView(APIView):
@@ -548,6 +645,9 @@ class SettingsProfileView(APIView):
                 'email': user.email,
                 'role': 'superuser' if user.is_superuser else user.role,
                 'avatar': None,
+                "organisation": user.organisation,
+                "phone_number":user.phone_number,
+                
                 'timezone': getattr(user, 'timezone', 'UTC'),
                 'emailNotifications': getattr(user, 'email_notifications', True),
                 'twoFactorEnabled': False
@@ -556,6 +656,7 @@ class SettingsProfileView(APIView):
     
     def put(self, request, *args, **kwargs):
         user = request.user
+        phone_number=request.data.get('phone_number')   
         name = request.data.get('name')
         timezone_str = request.data.get('timezone')
         email_notifications = request.data.get('emailNotifications')
@@ -568,6 +669,8 @@ class SettingsProfileView(APIView):
             user.timezone = timezone_str
         if email_notifications is not None:
             user.email_notifications = email_notifications
+        if phone_number:
+            user.phone_number = phone_number
         
         user.save()
         
@@ -848,6 +951,61 @@ class PlanDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+# ============================================================================
+# ADMIN VIEWSETS
+# ============================================================================
+
+class AdminPlanViewSet(viewsets.ModelViewSet):
+    """
+    Comprehensive ViewSet for administrative plan management.
+    Handles List, Create, Retrieve, Update, and Delete for Plans 
+    including their nested features.
+    """
+    queryset = Plan.objects.all().prefetch_related('features').order_by('-is_popular', '-created_at')
+    serializer_class = PlanAdminSerializer
+    permission_classes = [IsAuthenticated, IsAdmin]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    
+    # Filterable fields
+    filterset_fields = ['is_active', 'is_popular', 'use_type', 'theme']
+    
+    # Searchable fields
+    search_fields = ['name', 'description', 'plan_id']
+    
+    # Sortable fields
+    ordering_fields = ['created_at', 'monthly_price', 'total_credits']
+
+
+class AdminUserViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for administrative user management.
+    Handles searching, filtering, and deep editing of user accounts.
+    """
+    queryset = User.objects.all().select_related('organisation', 'subscription_plan').order_by('-created_at')
+    serializer_class = AdminUserSerializer
+    permission_classes = [IsAuthenticated, IsAdmin]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    
+    # Filterable fields
+    filterset_fields = ['role', 'user_type', 'is_active', 'is_verified', 'trial', 'organisation']
+    
+    # Searchable fields
+    search_fields = ['email', 'username', 'first_name', 'last_name', 'phone_number']
+    
+    # Sortable fields
+    ordering_fields = ['created_at', 'last_login_at', 'email', 'username']
+
+    def destroy(self, request, *args, **kwargs):
+        """Override delete to perform deactivation instead of hard delete for safety"""
+        user = self.get_object()
+        user.is_active = False
+        user.save()
+        return Response(
+            {'message': 'User deactivated successfully'}, 
+            status=status.HTTP_200_OK
+        )
+
+
 class ActivePlansView(APIView):
     """
     Get all active plans
@@ -856,13 +1014,10 @@ class ActivePlansView(APIView):
     permission_classes = [AllowAny]
     
     def get(self, request):
-        """Get all active plans with features"""
+        """Get all active plans with features in public camelCase format"""
         plans = Plan.objects.filter(is_active=True).prefetch_related('features').order_by('-is_popular', '-created_at')
-        serializer = PlanListSerializer(plans, many=True)
-        return Response({
-            'count': plans.count(),
-            'plans': serializer.data
-        })
+        serializer = PlanPublicSerializer(plans, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class PlansByTypeView(APIView):
@@ -1097,3 +1252,38 @@ class CreditsUsageView(APIView):
         ).order_by('-created_at').first()
         
         return subscription
+
+class SidebarBadgesView(APIView):
+    """
+    Get dynamic badge counts for sidebar navigation
+    GET /api/v1/auth/sidebar-badges/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from tools.models import AITool, AILog
+        from leads.models import Notification
+        from django.utils import timezone
+        import datetime
+        
+        user = request.user
+        
+        # Tools: new tools created in the last 7 days appropriate for user role
+        seven_days_ago = timezone.now() - datetime.timedelta(days=7)
+        tools_count = AITool.objects.filter(
+            created_at__gte=seven_days_ago, 
+            categories__type=user.role
+        ).count()
+        
+        # History: user's AI generations today
+        today = timezone.now().date()
+        history_count = AILog.objects.filter(user=user, created_at__date=today).count()
+        
+        # Notifications: unread notifications for user
+        notifications_count = Notification.objects.filter(user=user, is_read=False).count()
+        
+        return Response({
+            'tools': tools_count,
+            'history': history_count,
+            'notifications': notifications_count
+        }, status=status.HTTP_200_OK)

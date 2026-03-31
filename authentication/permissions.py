@@ -38,6 +38,18 @@ class IsAdmin(permissions.BasePermission):
         )
 
 
+class IsSuperUser(permissions.BasePermission):
+    """
+    Permission to only allow superusers to access the view
+    """
+    def has_permission(self, request, view):
+        return (
+            request.user and
+            request.user.is_authenticated and
+            request.user.is_superuser
+        )
+
+
 class IsOwnerOrAdmin(permissions.BasePermission):
     """
     Permission to only allow owners of an object or admins to access it
