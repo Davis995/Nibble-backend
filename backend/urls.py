@@ -3,11 +3,9 @@ from django.contrib import admin
 from django.urls import path,include
 from django.conf import settings
 from django.conf.urls.static import static
-from authentication.views import SessionView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/auth/session', SessionView.as_view(), name='session-check'),
     path('api/v1/tools/', include("tools.urls")),
     path('api/v1/auth/', include("authentication.urls")),
     path('api/v1/schools/', include("schools.urls")),

@@ -616,27 +616,6 @@ class EmailVerificationView(APIView):
         return Response({'message': 'Email verified'}, status=status.HTTP_200_OK)
 
 
-class SessionView(APIView):
-    """
-    GET: Check if user has an active session.
-    Used by frontend (e.g. NextAuth) to verify authentication state.
-    """
-    permission_classes = [AllowAny]
-    authentication_classes = [] # Allow unauthenticated check
-
-    def get(self, request, *args, **kwargs):
-        if request.user.is_authenticated:
-            return Response({
-                'user': {
-                    'id': str(request.user.id),
-                    'email': request.user.email,
-                    'name': request.user.get_full_name() or request.user.username,
-                    'role': getattr(request.user, 'role', 'student'),
-                }
-            }, status=status.HTTP_200_OK)
-        return Response({}, status=status.HTTP_200_OK)
-
-
 class ResendVerificationEmailView(APIView):
     """POST: Resend verification email"""
     permission_classes = [IsAuthenticated]
