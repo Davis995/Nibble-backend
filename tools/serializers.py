@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 User = get_user_model()
-from .models import AILog, AITool, UserAIUsage, ToolCategory, ToolInput, ToolFavorite
+from .models import AILog, AITool, UserAIUsage, ToolCategory, ToolInput, ToolFavorite, AIModelConfig
 from datetime import datetime, timedelta
 from django.db.models import Sum, Count
 from decimal import Decimal
@@ -333,4 +333,14 @@ class ToolCreateUpdateSerializer(serializers.ModelSerializer):
             'id', 'slug', 'name', 'student_friendly_name', 'description',
             'categories', 'icon', 'color', 'system_prompt',
             'is_premium', 'is_recommended', 'is_active', 'preferred_modal'
+        ]
+
+
+class AIModelConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AIModelConfig
+        fields = [
+            'id', 'model_id', 'name', 'provider', 'input_token_weight', 
+            'output_token_weight', 'min_charge', 'credit_multiplier', 
+            'enterprise_discount', 'is_active', 'created_at', 'updated_at'
         ]

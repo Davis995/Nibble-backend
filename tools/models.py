@@ -43,6 +43,7 @@ class AITool(models.Model):
     icon = models.CharField(max_length=50,null=True,blank=True)
     color = models.CharField(max_length=7, default='#000000', help_text="Hex color code")
     system_prompt = models.TextField(blank=True, null=True)
+    user_prompt_template = models.TextField(blank=True, null=True, help_text="Template for the user prompt with placeholders like {column_name}")
     is_premium = models.BooleanField(default=False)
     is_recommended = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)

@@ -1,4 +1,5 @@
 from rest_framework.views import APIView
+from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
@@ -1659,3 +1660,26 @@ class AILogExportView(APIView):
 
         serializer = AILogListSerializer(logs[:10000], many=True)
         return Response(serializer.data)
+
+
+# ================== AI MODEL CONFIG VIEWS (ADMIN) ==================
+
+class AdminAIModelConfigListView(generics.ListCreateAPIView):
+    """
+    GET: List all AI Model configurations
+    POST: Create a new AI Model configuration
+    """
+    permission_classes = [IsSuperUser]
+    queryset = AIModelConfig.objects.all().order_by('-created_at')
+    serializer_class = AIModelConfigSerializer
+
+class AdminAIModelConfigDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET: Retrieve an AI Model configuration
+    PUT/PATCH: Update an AI Model configuration
+    DELETE: Remove an AI Model configuration
+    """
+    permission_classes = [IsSuperUser]
+    queryset = AIModelConfig.objects.all()
+    serializer_class = AIModelConfigSerializer
+

@@ -27,6 +27,8 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from .models import PasswordResetToken, PasswordResetCode
 import random
+from .services import create_subscription
+from payments.services import initiate_payment as initiate_pesapal_payment
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -43,23 +45,6 @@ class UserRegistrationView(APIView):
         serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            
-            # Auto-create subscription to individual free plan
-            try:
-                free_plan = Plan.objects.get(name='Free')
-                Subscription.objects.create(
-                    user=user,
-                    plan=free_plan,
-                    status='active',
-                    max_users=free_plan.max_users if hasattr(free_plan, 'max_users') else 1,
-                    start_credits=free_plan.total_credits,
-                    remaining_credits=free_plan.total_credits,
-                    billing_start_date=timezone.now().date(),
-                    billing_end_date=timezone.now().date() + timedelta(days=30)
-                )
-            except Plan.DoesNotExist:
-                # If plan doesn't exist, skip or handle
-                pass
             
             # Generate JWT tokens for auto-login after registration
             refresh = RefreshToken.for_user(user)
@@ -385,13 +370,54 @@ class UserOnboardingUpdateView(APIView):
             user.is_onboarded = (str(val).lower() == 'true' or val is True)
             
         user.save()
+
+        # Handle plan selection if provided
+        response_data = {'message': 'Onboarding data updated successfully'}
         
+        if 'plan' in data:
+            try:
+                plan_id = data['plan']
+                billing_period = data.get('billing_period', 'monthly')
+                plan = Plan.objects.get(plan_id=plan_id)
+                
+                price = plan.annual_price if billing_period == 'annual' else plan.monthly_price
+                
+                if price == 0:
+                    # Free plan: Create subscription directly
+                    create_subscription(user=user, plan=plan)
+                    response_data['subscription_status'] = 'active'
+                else:
+                    # Paid plan: Initiate payment
+                    payment_data = {
+                        'payment_type': 'subscription',
+                        'plan_id': plan.id,
+                        'amount': plan.annual_billed if billing_period == 'annual' else plan.monthly_price,
+                        'currency': plan.currency,
+                        # Pass any billing info if available
+                        'email_address': user.email,
+                        'first_name': user.first_name,
+                        'last_name': user.last_name,
+                    }
+                    
+                    payment_res = initiate_pesapal_payment(payment_data, user)
+                    
+                    if 'error' in payment_res:
+                        return Response(payment_res, status=status.HTTP_400_BAD_REQUEST)
+                    
+                    response_data['payment_required'] = True
+                    response_data['redirect_url'] = payment_res['redirect_url']
+                    response_data['order_tracking_id'] = payment_res['order_tracking_id']
+                    
+            except Plan.DoesNotExist:
+                return Response({'error': f'Plan with id {plan_id} not found'}, status=status.HTTP_404_NOT_FOUND)
+            except Exception as e:
+                return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         # Can reuse UserProfileSerializer to send the updated user state back
         serializer = UserProfileSerializer(user)
-        return Response(
-            {'message': 'Onboarding data updated successfully', 'data': serializer.data},
-            status=status.HTTP_200_OK
-        )
+        response_data['data'] = serializer.data
+        
+        return Response(response_data, status=status.HTTP_200_OK)
 
 
 class ChangePasswordView(APIView):
@@ -1018,6 +1044,42 @@ class ActivePlansView(APIView):
         plans = Plan.objects.filter(is_active=True).prefetch_related('features').order_by('-is_popular', '-created_at')
         serializer = PlanPublicSerializer(plans, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class OnboardingPlansView(APIView):
+    """
+    Get plans for the onboarding plan selection step.
+    Returns plans grouped by use_type (individual / enterprise)
+    so the frontend can render tabs or sections without extra requests.
+
+    GET /api/v1/auth/plans/onboarding/
+    Optional query param: ?use_type=individual|enterprise  (filter to one group)
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []  # No auth – user is mid-onboarding
+
+    def get(self, request):
+        base_qs = Plan.objects.filter(is_active=True).prefetch_related('features')
+
+        use_type = request.query_params.get('use_type')
+
+        if use_type in ('individual', 'enterprise'):
+            # Return only the requested group
+            plans = base_qs.filter(use_type=use_type)
+            serializer = PlanPublicSerializer(plans, many=True)
+            return Response({
+                'useType': use_type,
+                'plans': serializer.data,
+            }, status=status.HTTP_200_OK)
+
+        # Default: return both groups
+        individual_plans = base_qs.filter(use_type='individual')
+        enterprise_plans = base_qs.filter(use_type='enterprise')
+
+        return Response({
+            'individual': PlanPublicSerializer(individual_plans, many=True).data,
+            'enterprise': PlanPublicSerializer(enterprise_plans, many=True).data,
+        }, status=status.HTTP_200_OK)
 
 
 class PlansByTypeView(APIView):

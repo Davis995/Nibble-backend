@@ -42,6 +42,7 @@ class Plan(models.Model):
     cta = models.CharField(max_length=100, default="Select Plan", help_text="Call-to-action button text")
     is_popular = models.BooleanField(default=False, help_text="Mark as popular/featured plan")
     is_active = models.BooleanField(default=True, help_text="Whether this plan is available")
+    display_order = models.PositiveIntegerField(default=0, help_text="Order in which this plan should be displayed")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -50,6 +51,7 @@ class Plan(models.Model):
         db_table = 'plans'
         verbose_name = 'Plan'
         verbose_name_plural = 'Plans'
+        ordering = ['display_order', 'plan_id']
         constraints = [
             models.CheckConstraint(check=models.Q(use_type__in=['individual', 'enterprise']), name='plan_use_type_valid'),
             models.CheckConstraint(check=models.Q(monthly_price__gte=0), name='monthly_price_non_negative'),
@@ -211,6 +213,7 @@ class User(AbstractUser):
             models.CheckConstraint(
                 check=(
                     models.Q(user_type='individual') | 
+                    models.Q(user_type='nibble') |
                     (models.Q(user_type='enterprise') & models.Q(organisation__isnull=False))
                 ),
                 name='enterprise_user_must_have_organisation'

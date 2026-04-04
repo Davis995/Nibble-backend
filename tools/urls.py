@@ -26,7 +26,9 @@ from .views import (
     ToolInputListView,
     ToolInputDetailView,
     AILogExportView,
-    AdminAILogListView
+    AdminAILogListView,
+    AdminAIModelConfigListView,
+    AdminAIModelConfigDetailView
 )
 
 app_name = 'nibble_ai'
@@ -38,6 +40,8 @@ urlpatterns = [
     path('admin/tools/', ToolAnalyticsView.as_view(), name='tool-analytics'),
     path('admin/users/', UserAnalyticsView.as_view(), name='user-analytics'),
     path('admin/logs/', AdminAILogListView.as_view(), name='admin-logs-list'),
+    path('admin/models/', AdminAIModelConfigListView.as_view(), name='admin-models-list'),
+    path('admin/models/<int:pk>/', AdminAIModelConfigDetailView.as_view(), name='admin-models-detail'),
 
     # Tool Categories
     path('categories/', ToolCategoryListView.as_view(), name='category-list'),

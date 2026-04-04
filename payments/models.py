@@ -17,6 +17,7 @@ class Payment(models.Model):
         ('complete', 'Complete'),
         ('failed', 'Failed'),
         ('cancelled', 'Cancelled'),
+        ('partially_paid', 'Partially Paid'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -54,7 +55,7 @@ class Payment(models.Model):
                 name='payment_belongs_to_user_or_organisation'
             ),
             models.CheckConstraint(check=models.Q(payment_type__in=['subscription', 'topup']), name='payment_type_valid'),
-            models.CheckConstraint(check=models.Q(status__in=['pending', 'complete', 'failed', 'cancelled']), name='payment_status_valid'),
+            models.CheckConstraint(check=models.Q(status__in=['pending', 'complete', 'failed', 'cancelled', 'partially_paid']), name='payment_status_valid'),
         ]
         indexes = [
             models.Index(fields=['merchant_reference']),
@@ -79,6 +80,7 @@ class Invoice(models.Model):
         ('paid', 'Paid'),
         ('overdue', 'Overdue'),
         ('cancelled', 'Cancelled'),
+        ('partially_paid', 'Partially Paid'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -110,7 +112,7 @@ class Invoice(models.Model):
                 ),
                 name='invoice_belongs_to_user_or_organisation'
             ),
-            models.CheckConstraint(check=models.Q(status__in=['unpaid', 'paid', 'overdue', 'cancelled']), name='invoice_status_valid'),
+            models.CheckConstraint(check=models.Q(status__in=['unpaid', 'paid', 'overdue', 'cancelled', 'partially_paid']), name='invoice_status_valid'),
         ]
         indexes = [
             models.Index(fields=['invoice_number']),

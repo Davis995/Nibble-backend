@@ -406,7 +406,7 @@ class PlanAdminSerializer(serializers.ModelSerializer):
             'id', 'plan_id', 'name', 'description', 'use_type', 'theme', 
             'currency', 'allowed_modals', 'total_credits', 'max_users', 
             'monthly_price', 'annual_price', 'annual_billed', 'badge', 
-            'cta', 'is_popular', 'is_active', 'features', 'created_at', 'updated_at'
+            'cta', 'is_popular', 'is_active', 'display_order', 'features', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -463,7 +463,7 @@ class PlanListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'plan_id', 'name', 'description', 'use_type', 'theme',
             'total_credits', 'max_users', 'monthly_price', 'annual_price',
-            'annual_billed', 'badge', 'cta', 'is_popular', 'is_active', 'features'
+            'annual_billed', 'badge', 'cta', 'is_popular', 'is_active', 'display_order', 'features'
         ]
 
 
@@ -478,7 +478,7 @@ class PlanDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'plan_id', 'name', 'description', 'use_type', 'theme',
             'total_credits', 'max_users', 'monthly_price', 'annual_price',
-            'annual_billed', 'badge', 'cta', 'is_popular', 'is_active', 'features',
+            'annual_billed', 'badge', 'cta', 'is_popular', 'is_active', 'display_order', 'features',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
@@ -496,7 +496,7 @@ class PlanCreateUpdateSerializer(serializers.ModelSerializer):
         fields = [
             'plan_id', 'name', 'description', 'use_type', 'theme',
             'total_credits', 'max_users', 'monthly_price', 'annual_price',
-            'annual_billed', 'badge', 'cta', 'is_popular', 'is_active', 'features'
+            'annual_billed', 'badge', 'cta', 'is_popular', 'is_active', 'display_order', 'features'
         ]
 
     def create(self, validated_data):
@@ -542,17 +542,22 @@ class PlanPublicSerializer(serializers.ModelSerializer):
     Public serializer for plans with camelCase fields as requested
     """
     id = serializers.CharField(source='plan_id')
+    useType = serializers.CharField(source='use_type')
+    totalCredits = serializers.IntegerField(source='total_credits')
+    maxUsers = serializers.IntegerField(source='max_users')
     monthlyPrice = serializers.FloatField(source='monthly_price')
     annualPrice = serializers.FloatField(source='annual_price')
     annualBilled = serializers.FloatField(source='annual_billed')
     popular = serializers.BooleanField(source='is_popular')
+    displayOrder = serializers.IntegerField(source='display_order')
     features = PlanFeaturePublicSerializer(many=True, read_only=True)
 
     class Meta:
         model = Plan
         fields = [
-            'id', 'name', 'description', 'currency', 'monthlyPrice', 'annualPrice', 
-            'annualBilled', 'badge', 'popular', 'theme', 'cta', 'features'
+            'id', 'name', 'description', 'useType', 'currency', 'totalCredits',
+            'maxUsers', 'monthlyPrice', 'annualPrice', 'annualBilled', 'badge',
+            'popular', 'theme', 'cta', 'displayOrder', 'features'
         ]
 
 class CreditsUsageSerializer(serializers.Serializer):

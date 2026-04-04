@@ -112,6 +112,7 @@ urlpatterns = [
     
     # Additional plan endpoints
     path('plans/active/', ActivePlansView.as_view(), name='active-plans'),
+    path('plans/onboarding/', OnboardingPlansView.as_view(), name='onboarding-plans'),
     path('plans/by-type/', PlansByTypeView.as_view(), name='plans-by-type'),
     # Invitation endpoints
     path('invite/create/', InvitationCreateView.as_view(), name='invite-create'),
